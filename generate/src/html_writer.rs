@@ -1,4 +1,7 @@
-use std::{fmt::{self, Display}, iter::{self, FusedIterator}};
+use std::{
+    fmt::{self, Display},
+    iter::{self, FusedIterator},
+};
 
 #[derive(Clone, Copy)]
 pub struct Join<I> {
@@ -7,15 +10,15 @@ pub struct Join<I> {
 }
 
 impl<D, I> Display for Join<I>
-    where
+where
     I: IntoIterator<Item = D> + Clone + Copy,
-    D: Display
+    D: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Join { items, sep } = *self;
         let mut it = items.into_iter();
         let Some(first) = it.next() else {
-            return Ok(())
+            return Ok(());
         };
         first.fmt(f)?;
         for item in it {
@@ -37,15 +40,12 @@ where
 
 impl<'a, D: Display + 'a> DispJoin<'a> for [D] {
     fn disp_join(&'a self, sep: &'static str) -> Join<&'a Self> {
-        Join {
-            sep,
-            items: self,
-        }
+        Join { sep, items: self }
     }
 }
 
 // impl<I> DispJoin for I
-//     where 
+//     where
 //     I: IntoIterator + Clone + Copy,
 //     <I as IntoIterator>::Item: Display
 // {
@@ -87,10 +87,7 @@ pub struct TagSurround<D, A> {
 
 impl<'a, D, A: StrArr<'a>> TagSurround<D, A> {
     pub fn new(tags: A, content: D) -> Self {
-        Self {
-            tags,
-            content,
-        }
+        Self { tags, content }
     }
 }
 
@@ -116,11 +113,16 @@ pub struct Surround<'a, D> {
 
 impl<'a, D: Display> Display for Surround<'a, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Surround { open, close, ref content } = *self;
+        let Surround {
+            open,
+            close,
+            ref content,
+        } = *self;
         write!(f, "{open}{content}{close}")
     }
 }
 
+#[allow(dead_code)]
 pub trait SurroundExt: Display + Sized {
     fn surround<'a>(self, open: &'a str, close: &'a str) -> Surround<'a, Self>;
     fn surround_tag<'a, A: StrArr<'a>>(self, tags: A) -> TagSurround<Self, A>;
@@ -128,15 +130,20 @@ pub trait SurroundExt: Display + Sized {
 
 impl<T: Display + Sized> SurroundExt for T {
     fn surround<'a>(self, open: &'a str, close: &'a str) -> Surround<'a, Self> {
-        Surround { open, close, content: self }
+        Surround {
+            open,
+            close,
+            content: self,
+        }
     }
 
     fn surround_tag<'a, A: StrArr<'a>>(self, tags: A) -> TagSurround<Self, A> {
-        TagSurround { tags, content: self }
+        TagSurround {
+            tags,
+            content: self,
+        }
     }
 }
-
-
 
 #[derive(Clone, Copy)]
 pub struct EscapeBody<'a>(pub &'a str);
@@ -152,6 +159,35 @@ impl Display for EscapeBody<'_> {
                 '>' => "&gt;",
                 '<' => "&lt;",
                 '&' => "&amp;",
+                _ => continue,
+            };
+            f.write_str(&raw[last..i])?;
+            f.write_str(s)?;
+            last = i + 1;
+        }
+
+        if last < s.len() {
+            f.write_str(&raw[last..])?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct EscapeAttr<'a>(pub &'a str);
+
+impl Display for EscapeAttr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // stole from https://doc.rust-lang.org/beta/nightly-rustc/src/rustdoc/html/escape.rs.html
+        let EscapeAttr(s) = *self;
+        let raw = s;
+        let mut last = 0;
+        for (i, ch) in s.char_indices() {
+            let s = match ch {
+                '>' => "&gt;",
+                '<' => "&lt;",
+                '&' => "&amp;",
+                '\"' => "\\\"",
                 _ => continue,
             };
             f.write_str(&raw[last..i])?;

@@ -2,7 +2,10 @@
 
 pub mod chapter;
 mod html_writer;
+mod util;
+pub mod cache;
 
+pub mod epub;
 
 // #[cfg(test)]
 // mod tests {

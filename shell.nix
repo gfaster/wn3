@@ -2,6 +2,7 @@
   let
     overrides = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml));
     libPath = with pkgs; lib.makeLibraryPath [
+      sqlite
       # load external libraries that you need in your rust project here
     ];
 in
@@ -9,8 +10,9 @@ in
     buildInputs = with pkgs; [
       clang
       # Replace llvmPackages with llvmPackages_X, where X is the latest LLVM version (at the time of writing, 16)
-      llvmPackages_17.bintools
+      llvmPackages_18.bintools
       rustup
+      sqlite
     ];
     RUSTC_VERSION = overrides.toolchain.channel;
     # https://github.com/rust-lang/rust-bindgen#environment-variables
