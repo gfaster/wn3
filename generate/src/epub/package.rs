@@ -1,23 +1,28 @@
 //! for creating the `.opf` package document
 //!
 //! <https://www.w3.org/TR/epub/#sec-package-doc>
-#![allow(dead_code)]
 
 use std::{collections::HashMap, rc::Rc, time::SystemTime};
+
+use time::{format_description, OffsetDateTime};
 
 use crate::util::{OptSetting, Setting};
 
 pub struct OpfBuilder {
     pub language: Setting,
     pub title: Setting,
-    pub creator: Setting,
-    pub publisher: Setting,
+    pub publisher: OptSetting,
     pub date: SystemTime,
 
-    pub id_unique: Option<IdentifierType>,
-    pub id_isbn10: OptSetting,
-    pub id_isbn13: OptSetting,
-    pub id_url: OptSetting,
+    /// list of identifiers according to <http://purl.org/dc/terms/identifier>
+    ///
+    /// There must be at least one identifier. The first element in this `Vec` is chosen as the
+    /// unique identifier. Use `sort_ids` to sort based on [`IdentifierType`] `Ord` impl which is
+    /// the suggested ordering
+    pub identifiers: Vec<(IdentifierType, Box<str>)>,
+
+    /// contributers (creators) with their MARC relator role
+    pub contributers: Vec<(ContributorRole, Box<str>)>,
 
     /// every item in reading order
     pub manifest: Vec<ManifestItem>,
@@ -27,18 +32,16 @@ pub struct OpfBuilder {
 pub struct OpfError {
     // phase 1 errors
     no_nav: bool,
-    no_uniq_id: bool,
+    no_identifiers: bool,
     duplicate_manifest_item: bool,
 
     // phase 2 errors
-    uniq_id_unset: bool,
 }
 
 impl OpfError {
     fn any(&self) -> bool {
         self.no_nav |
-        self.no_uniq_id |
-        self.uniq_id_unset |
+        self.no_identifiers |
         self.duplicate_manifest_item
     }
 }
@@ -46,14 +49,11 @@ impl OpfError {
 pub struct OpfSpec {
     language: Setting,
     title: Setting,
-    creator: Setting,
-    publisher: Setting,
+    publisher: OptSetting,
     date: SystemTime,
 
-    id_unique: IdentifierType,
-    id_isbn10: OptSetting,
-    id_isbn13: OptSetting,
-    id_url: OptSetting,
+    identifiers: Vec<(IdentifierType, Box<str>)>,
+    contributers: Vec<(ContributorRole, Box<str>)>,
 
     manifest_nav: ManifestItem,
     manifest_cover: Option<ManifestItem>,
@@ -66,38 +66,36 @@ impl OpfBuilder {
         Self {
             language: Setting::dft("en"),
             title: Setting::dft("Ebook"),
-            creator: Setting::dft("anonymous"),
-            publisher: Setting::dft("unknown"),
+            publisher: OptSetting::new(),
             date: SystemTime::UNIX_EPOCH,
-            id_unique: None,
-            id_isbn10: OptSetting::new(),
-            id_isbn13: OptSetting::new(),
-            id_url: OptSetting::new(),
             manifest: Vec::new(),
+            identifiers: Vec::new(),
+            contributers: Vec::new(),
         }
+    }
+
+    pub fn add_identifier(&mut self, ty: IdentifierType, val: impl Into<Box<str>>) -> &mut Self {
+        self.identifiers.push((ty, val.into()));
+        self
     }
 
     pub fn finish(self) -> Result<OpfSpec, OpfError> {
         let OpfBuilder {
             language,
             title,
-            creator,
             publisher,
             date,
-            id_unique,
-            id_isbn10,
-            id_isbn13,
-            id_url,
             manifest,
+            identifiers,
+            contributers,
         } = self;
         let mut e = OpfError {
             no_nav: false,
-            no_uniq_id: false,
-            uniq_id_unset: false,
             duplicate_manifest_item: false,
+            no_identifiers: false,
         };
-        if id_unique.is_none() {
-            e.uniq_id_unset = true;
+        if identifiers.is_empty() {
+            e.no_identifiers = true;
         }
         let manifest_len = manifest.len();
         let (mut manifest, mut spine): (HashMap<_, _>, Vec<_>) = manifest.into_iter().map(|m| {
@@ -114,17 +112,6 @@ impl OpfBuilder {
         if e.any() {
             return Err(e);
         }
-        let id_unique = id_unique.unwrap();
-        {
-            let is_set = match id_unique {
-                IdentifierType::Url => id_url.is_set(),
-                IdentifierType::Isbn10 => id_isbn10.is_set(),
-                IdentifierType::Isbn13 => id_isbn13.is_set(),
-            };
-            if !is_set {
-                e.uniq_id_unset = true;
-            }
-        }
         let manifest_nav = manifest.remove("nav").unwrap();
         let manifest_cover = manifest.remove("cover");
         let date = if date == SystemTime::UNIX_EPOCH {
@@ -140,13 +127,10 @@ impl OpfBuilder {
         Ok(OpfSpec {
             language,
             title,
-            creator,
             publisher,
+            contributers,
             date,
-            id_unique,
-            id_isbn10,
-            id_isbn13,
-            id_url,
+            identifiers,
             manifest_nav,
             manifest_cover,
             manifest,
@@ -164,31 +148,43 @@ impl Default for OpfBuilder {
 impl OpfSpec {
     pub fn write(&self, w: &mut impl std::io::Write) -> std::io::Result<()> {
         use super::xml::*;
+        let datetime: OffsetDateTime = self.date.into();
+        let datetime = datetime.to_offset(time::UtcOffset::UTC);
         let mut w = XmlSink::new(w)?;
-        let unique = match self.id_unique {
-            IdentifierType::Url => "url",
-            IdentifierType::Isbn10 => "isbn10",
-            IdentifierType::Isbn13 => "isbn13",
-        };
         let mut pkg = w.mkel("package", [
             ("version", "3.0"),
             ("xml:lang", "en"),
             ("xmlns", "http://www.idpf.org/2007/opf"),
-            ("unique-identifier", unique)
+            ("unique-identifier", "identifier_0")
         ])?;
         {
             let mut metadata = pkg.mkel("metadata", [("xmlns:dc", "http://purl.org/dc/elements/1.1/")])?;
-            if let Some(url) = self.id_url.get() {
-                metadata.mkel("dc:identifier", [("id", "url")])?.write_field(url)?;
+
+            metadata.mkel("dc:title", [])?.write_field(self.title())?;
+
+            for (i, &(_ty, ref id)) in self.identifiers.iter().enumerate() {
+                metadata.mkel("dc:identifier", [("id", &*format!("identifier_{i}"))])?.write_field(id)?;
             }
-            if let Some(isbn) = self.id_isbn10.get() {
-                metadata.mkel("dc:identifier", [("id", "isbn10")])?.write_field(isbn)?;
+            // TODO: make dc:date not fake
+            metadata.mkel("dc:date", [])?.write_field(datetime.date())?;
+            let datestr = datetime.format(
+                &format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]Z")
+                    .expect("valid format description")).unwrap();
+            metadata.mkel("meta", [("property","dcterms:modified")])?.write_field(datestr)?;
+            for (i, &(role, ref creator)) in self.contributers.iter().enumerate() {
+                let id =    format!("creator{i:03}");
+                let selid = format!("#{id}");
+                metadata.mkel("dc:creator", [("id", &*id)])?.write_field(&**creator)?;
+                metadata.mkel("meta", [
+                    ("refines", &*selid),
+                    ("property", "role"),
+                    ("scheme", "marc:relators"),
+                ])?.write_field(role.marc_code())?;
             }
-            if let Some(isbn) = self.id_isbn13.get() {
-                metadata.mkel("dc:identifier", [("id", "isbn13")])?.write_field(isbn)?;
+            metadata.mkel("dc:language", [])?.write_field(&*self.language)?;
+            if let Some(publisher) = self.publisher.get() {
+                metadata.mkel("dc:publisher", [])?.write_field(publisher)?;
             }
-            // TODO: make this not fake
-            metadata.mkel("dc:date", [])?.write_field("2024-07-07")?;
         }
         {
             let mut manifest = pkg.mkel("manifest", [])?;
@@ -215,12 +211,18 @@ impl OpfSpec {
             }
         }
         {
-            let mut spine = pkg.mkel("spline", [])?;
+            let mut spine = pkg.mkel("spine", [])?;
             for id in &self.spine {
                 spine.mkel_selfclosed("itemref", [("idref", &**id)])?;
             }
         }
+        drop(pkg);
+        w.finish()?;
         Ok(())
+    }
+
+    pub fn title(&self) -> &str {
+        &*self.title
     }
 }
 
@@ -243,7 +245,12 @@ impl ManifestItem {
         stem.rsplit_once('/').map_or(stem, |(_, id)| id)
     }
 
-    pub fn try_new(href: &str) -> Option<Self> {
+    pub fn new(href: impl Into<Box<str>>) -> Self {
+        Self::try_new(href).expect("invalid href")
+    }
+
+    pub fn try_new(href: impl Into<Box<str>>) -> Option<Self> {
+        let href = href.into();
         let (stem, ext) = href.rsplit_once('.')?;
         let media_type = match ext {
             "xhtml" => "application/xhtml+xml",
@@ -264,10 +271,41 @@ impl ManifestItem {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IdentifierType {
-    Url,
-    Isbn10,
+    Doi,
     Isbn13,
+    Isbn10,
+    Issn,
+    Url,
+    Adhoc,
+}
+
+/// See: <https://id.loc.gov/vocabulary/relators.html> and
+/// <https://idpf.org/epub/20/spec/OPF_2.0.1_draft.htm#Section2.2.6>
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContributorRole {
+    Author,
+    Illustrator,
+    Editor,
+    Narrator,
+    Funder,
+    Translator,
+    Programmer,
+}
+
+impl ContributorRole {
+    pub fn marc_code(self) -> &'static str {
+        match self {
+            ContributorRole::Author => "aut",
+            ContributorRole::Illustrator => "ill",
+            ContributorRole::Editor => "edt",
+            ContributorRole::Narrator => "nrt",
+            ContributorRole::Funder => "fnd",
+            ContributorRole::Translator => "trl",
+            ContributorRole::Programmer => "prg",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -276,16 +314,15 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let builder = OpfBuilder {
+        let mut builder = OpfBuilder {
             title: "test".into(),
-            id_isbn13: "978-1-56619-909-4".into(),
-            id_unique: Some(IdentifierType::Isbn13),
             manifest: vec![
                 ManifestItem::try_new("nav.xhtml").unwrap(),
                 ManifestItem::try_new("chapter-1.xhtml").unwrap(),
             ],
             ..Default::default()
         };
+        builder.add_identifier(IdentifierType::Isbn13, "978-1-56619-909-4");
         builder.finish().unwrap();
     }
 }

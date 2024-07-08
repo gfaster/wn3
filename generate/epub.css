@@ -1,0 +1,59 @@
+@namespace epub "http://www.idpf.org/2007/ops";
+
+body {
+    color: rgb(0,0,0);
+    font-family: "Karla",Tahoma,sans-serif;
+    background-color: rgb(255,255,255);
+    margin: 0.5em 1em 0 0.5em;
+    border: 0;
+    padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    text-align: center;
+}
+
+h2 {
+    page-break-before: always;
+    padding-top: 3em
+}
+
+h3 {
+	page-break-before: always;
+}
+
+.subhd {
+	display: block;
+	margin-top: 0.5em;
+}
+
+span[epub|type~='bridgehead'] {
+    font-weight: bold;
+}
+
+div[epub|type~='z3998:author'] {
+	font-size: small;
+	font-weight: bold;
+	text-align: center;
+}
+
+p {
+    page-break-inside: avoid;
+    margin-top: 1em;
+    text-indent: 0em;
+    margin-bottom: 1em;
+}
+
+
+.center {
+    text-align: center;
+}
+
+.line {
+	display: block;
+}
+
+.hidden {
+	display: none;
+	visibility: hidden;
+}

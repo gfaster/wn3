@@ -10,23 +10,30 @@ pub struct XmlSink<W> {
 static XML_HEADER: &str = r#"<?xml version="1.0"?>
 
 "#;
+static XHTML_HEADER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+
+"#;
 
 impl<W: Write> XmlSink<W> {
-    pub fn new(w: W) -> io::Result<Self> {
-        let mut ret = XmlSink { w, queue: String::new() };
-        ret.write_header()?;
+    pub fn new(mut w: W) -> io::Result<Self> {
+        w.write_all(XML_HEADER.as_bytes())?;
+        let ret = XmlSink { w, queue: String::new() };
+        Ok(ret)
+    }
+
+    pub fn new_xhtml(mut w: W) -> io::Result<Self> {
+        w.write_all(XHTML_HEADER.as_bytes())?;
+        let ret = XmlSink { w, queue: String::new() };
         Ok(ret)
     }
 
     fn w(&mut self) -> io::Result<&mut dyn Write> {
         if !self.queue.is_empty() {
             self.w.write_all(self.queue.as_bytes())?;
+            self.queue.clear();
         }
         Ok(&mut self.w)
-    }
-
-    fn write_header(&mut self) -> io::Result<()> {
-        self.w()?.write_all(XML_HEADER.as_bytes())
     }
 
     pub fn mkel<'a>(&'a mut self, name: &'static str, attrs: impl IntoIterator<Item = (&'a str, &'a str)>) -> io::Result<Element<W>> {
@@ -53,6 +60,38 @@ impl<W: Write> XmlSink<W> {
         Ok(())
     }
 }
+
+// macro_rules! xml_tag {
+//     ($parent:expr, 
+//     <$tag_pfx:ident$(:$tag_sfx:ident)? 
+//         $($attr_pfx:ident$(:$attr_sfx:ident)?=$val:literal)*>
+// ) => {
+//     {
+//     let name = stringify!($tag_pfx$(:$tag_sfx)?);
+//         $parent.mkel(name, [
+//     $({
+//     let attr = stringify!($attr_pfx$(:$attr_sfx)?);
+//             (attr, $val)
+//     }),*
+//         ])
+//     }
+//     };
+//     ($parent:expr, 
+//     <$tag_pfx:ident$(:$tag_sfx:ident)? 
+//         $($attr_pfx:ident$(:$attr_sfx:ident)?=$val:literal)* />
+// ) => {
+//     {
+//     let name = stringify!($tag_pfx:ident$(:$tag_sfx)?);
+//         $parent.mkel_selfclosed(name, [
+//     $({
+//     let attr = stringify!($attr_pfx$(:$attr_sfx)?);
+//             (attr, $val)
+//     }),*
+//         ])
+//     }
+//     };
+// }
+// pub(crate) use xml_tag;
 
 pub struct Element<'a, W> {
     sink: &'a mut XmlSink<W>,

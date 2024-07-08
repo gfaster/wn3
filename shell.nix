@@ -13,6 +13,7 @@ in
       llvmPackages_18.bintools
       rustup
       sqlite
+      epubcheck
     ];
     RUSTC_VERSION = overrides.toolchain.channel;
     # https://github.com/rust-lang/rust-bindgen#environment-variables

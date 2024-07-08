@@ -9,6 +9,8 @@ pub enum MediaType {
     Jpg = 3,
     Svg = 4,
     Css = 5,
+    Gif = 6,
+    Webp = 7,
 }
 
 impl MediaType {
@@ -25,6 +27,8 @@ impl MediaType {
             3 => Self::Jpg,
             4 => Self::Svg,
             5 => Self::Css,
+            6 => Self::Gif,
+            7 => Self::Webp,
             _ => return None,
         };
         if id != ret as i32 {
@@ -41,6 +45,8 @@ impl MediaType {
             MediaType::Jpg => "image/jpeg",
             MediaType::Svg => "image/svg+xml",
             MediaType::Css => "text/css",
+            MediaType::Gif => "image/gif",
+            MediaType::Webp => "image/webp",
         }
     }
 

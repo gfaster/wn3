@@ -1,5 +1,5 @@
 use crate::html_writer::*;
-use std::{collections::HashSet, fmt::Display};
+use std::fmt::Display;
 
 // struct ImageDesc<'a> {
 //     pub path: Box<str>,
@@ -57,7 +57,12 @@ impl SpanStyle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ParagraphStyle {
+pub struct ParagraphStyle {
+    mode: ParagraphMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParagraphMode {
     #[default]
     Normal,
     BlockQuote,
@@ -72,17 +77,17 @@ pub struct Paragraph<'a> {
 impl Display for Paragraph<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            let prefix = match self.style {
-                ParagraphStyle::Normal => "",
-                ParagraphStyle::BlockQuote => "> ",
+            let prefix = match self.style.mode {
+                ParagraphMode::Normal => "",
+                ParagraphMode::BlockQuote => "> ",
             };
             f.write_str(prefix)?;
             let disp = self.elms.disp_join("");
             disp.fmt(f)
         } else {
-            let tag = match self.style {
-                ParagraphStyle::Normal => "p",
-                ParagraphStyle::BlockQuote => "blockquote",
+            let tag = match self.style.mode {
+                ParagraphMode::Normal => "p",
+                ParagraphMode::BlockQuote => "blockquote",
             };
             let disp = TagSurround::new(tag, self.elms.disp_join(""));
             disp.fmt(f)
@@ -95,6 +100,19 @@ pub enum InlineElement<'a> {
     EnableStyles(SpanStyle),
     DisableStyles(SpanStyle),
     Text(&'a str),
+    LineFeed,
+}
+
+impl InlineElement<'_> {
+    /// approximate inline size in bytes
+    pub fn size(&self) -> usize {
+        match self {
+            InlineElement::EnableStyles(_) => 8,
+            InlineElement::DisableStyles(_) => 8,
+            InlineElement::Text(t) => t.len(),
+            InlineElement::LineFeed => 6,
+        }
+    }
 }
 
 impl Display for InlineElement<'_> {
@@ -114,6 +132,7 @@ impl Display for InlineElement<'_> {
                     let disp = EscapeMd(text);
                     write!(f, "{disp}")
                 }
+                InlineElement::LineFeed => write!(f, " "),
             }
         } else {
             let content = match *self {
@@ -152,6 +171,7 @@ impl Display for InlineElement<'_> {
                 Self::Text(txt) => {
                     return write!(f, "{}", EscapeBody(txt));
                 }
+                InlineElement::LineFeed => "<br />\n",
             };
             write!(f, "{content}")
         }
@@ -174,7 +194,7 @@ impl Display for Chapter<'_> {
             writeln!(f)?;
             p.disp_join("\n\n").fmt(f)?;
         } else {
-            let title = EscapeBody(&*title).surround_tag("h1");
+            let title = EscapeBody(&*title).surround_tag("h2");
             writeln!(f, "{title}")?;
             p.disp_join("\n").fmt(f)?;
         }
@@ -183,6 +203,10 @@ impl Display for Chapter<'_> {
 }
 
 impl Chapter<'_> {
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
     pub fn id(&self) -> impl Display {
         struct D(u32);
         impl Display for D {
@@ -191,6 +215,11 @@ impl Chapter<'_> {
             }
         }
         D(self.id)
+    }
+
+    /// approximate size in bytes - tries to be an overestimate
+    pub fn size(&self) -> usize {
+        self.p.iter().map(|p| p.elms.iter().map(|e| e.size()).sum::<usize>() + 8).sum::<usize>() + 64
     }
 }
 
@@ -202,6 +231,7 @@ pub struct ChapterBuilder<'a> {
     pub paragraph_style: ParagraphStyle,
     pub span_style: SpanStyle,
     span_style_actual: SpanStyle,
+    pub preserve_line_feeds: bool,
 
     current_p: Vec<InlineElement<'a>>,
 
@@ -253,11 +283,17 @@ impl<'a> ChapterBuilder<'a> {
             span_style_actual: Default::default(),
             current_p: Default::default(),
             complete_p: Default::default(),
+            preserve_line_feeds: false,
         }
     }
 
     pub fn title_set(&mut self, s: impl Into<Box<str>>) -> &mut Self {
         self.title = Some(s.into());
+        self
+    }
+
+    pub fn preserve_line_feeds(&mut self, enable: bool) -> &mut Self {
+        self.preserve_line_feeds = enable;
         self
     }
 
@@ -306,7 +342,18 @@ impl<'a> ChapterBuilder<'a> {
 
     pub fn add_text(&mut self, content: &'a str) -> &mut Self {
         self.span_style_actualize();
-        self.current_p.push(InlineElement::Text(content));
+        if self.preserve_line_feeds {
+            let mut it = content.lines();
+            if let Some(first) = it.next() {
+                self.current_p.push(InlineElement::Text(first))
+            }
+            for rem in it {
+                self.current_p.push(InlineElement::LineFeed);
+                self.current_p.push(InlineElement::Text(rem));
+            }
+        } else {
+            self.current_p.push(InlineElement::Text(content));
+        }
         self
     }
 
