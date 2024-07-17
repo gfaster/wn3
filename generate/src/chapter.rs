@@ -56,6 +56,23 @@ impl SpanStyle {
     }
 }
 
+impl std::ops::Add for SpanStyle {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            bold: self.bold | rhs.bold,
+            italic: self.italic | rhs.italic,
+        }
+    }
+}
+
+impl std::ops::AddAssign for SpanStyle {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ParagraphStyle {
     mode: ParagraphMode,
@@ -345,13 +362,16 @@ impl<'a> ChapterBuilder<'a> {
         if self.preserve_line_feeds {
             let mut it = content.lines();
             if let Some(first) = it.next() {
+                let first = first.trim();
                 self.current_p.push(InlineElement::Text(first))
             }
             for rem in it {
+                let rem = rem.trim();
                 self.current_p.push(InlineElement::LineFeed);
                 self.current_p.push(InlineElement::Text(rem));
             }
         } else {
+            let content = content.trim();
             self.current_p.push(InlineElement::Text(content));
         }
         self

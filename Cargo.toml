@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+scraper = "0.19.1"
+fetch = {path = "./fetch"}
+generate = {path = "./generate"}

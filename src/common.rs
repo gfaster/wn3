@@ -1,0 +1,122 @@
+//! common rules that should rarely be overriden
+
+use generate::{chapter::SpanStyle, ChapterBuilder};
+use scraper::{node::Element, ElementRef, Html, Selector};
+
+type FnExclude = Box<dyn Fn(&ElementRef) -> bool>;
+type FnNext = Box<dyn Fn(&Html) -> Option<&str>>;
+type FnTitle = Box<dyn Fn(&Html) -> String>;
+pub struct Rules {
+    paragraphs: Selector,
+    exclude: FnExclude,
+    next_chapter: FnNext,
+    title: FnTitle
+}
+
+fn mk_next_chapter_il() -> FnNext {
+    let candidates = Selector::parse("#main p:last-of-type a:last-of-type").unwrap();
+    Box::new(move |html| {
+        let el = html.select(&candidates).next()?;
+        el.attr("href")
+    })
+}
+
+fn mk_exclude_il() -> FnExclude {
+    let candidates = Selector::parse(".sharedaddy,p a").unwrap();
+    Box::new(move |el| {
+        for e in el.select(&candidates) {
+            if let Some(class) = e.attr("class") {
+                if class.contains("sharedaddy") {
+                    return true
+                }
+            }
+            if e.text().any(|t| t.contains("Next Chapter")) {
+                return true
+            }
+        }
+        false
+    })
+}
+
+fn mk_title_il() -> FnTitle {
+    let sel = Selector::parse("head > title").unwrap();
+    Box::new(move |el| {
+        el.select(&sel).next().and_then(|e| e.text().next()).unwrap_or("Chapter").to_owned()
+    })
+}
+
+impl Rules {
+    pub fn new() -> Self {
+        Rules {
+            paragraphs: Selector::parse("#main p").unwrap(),
+            exclude: mk_exclude_il(),
+            next_chapter: mk_next_chapter_il(),
+            title: mk_title_il(),
+        }
+    }
+
+    pub fn parse(&self, html_file: &str) {
+        let html = std::fs::read_to_string(html_file).unwrap();
+        let html = Html::parse_document(&html);
+        let mut ch = ChapterBuilder::new();
+        ch.title_set((self.title)(&html));
+
+        for el in html.select(&self.paragraphs) {
+            if (self.exclude)(&el) {
+                continue
+            }
+            Rules::descend(&mut ch, el);
+            ch.paragraph_finish();
+            // for txt in el.text() {
+            //     println!("{txt}")
+            // }
+        }
+        let next = (self.next_chapter)(&html);
+        eprintln!("{:#}", ch.finish().expect("valid chapter"));
+        println!("{next:?}");
+    }
+
+    fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>) {
+        for child in el.children() {
+            match child.value() {
+                scraper::Node::Document => (),
+                scraper::Node::Fragment => (),
+                scraper::Node::Doctype(_) => (),
+                scraper::Node::Comment(_) => (),
+                scraper::Node::Text(txt) => {
+                    for line in txt.split("<br>") {
+                        ch.add_text(line);
+                    }
+                },
+                scraper::Node::Element(e) => {
+                    let prev_style = ch.span_style;
+                    if is_italics_tag(e) {
+                        ch.span_style += SpanStyle::italic();
+                    }
+                    if is_bold_tag(e) {
+                        ch.span_style += SpanStyle::bold();
+                    }
+                    Rules::descend(ch, ElementRef::wrap(child).unwrap());
+                    ch.span_style_set(prev_style);
+                },
+                scraper::Node::ProcessingInstruction(_) => (),
+            }
+        }
+    }
+}
+
+fn is_italics_tag(el: &Element) -> bool {
+    if el.name() == "i" || el.name() == "em" {
+        return true
+    }
+
+    false
+}
+
+fn is_bold_tag(el: &Element) -> bool {
+    if el.name() == "b" {
+        return true
+    }
+
+    false
+}
