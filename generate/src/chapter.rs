@@ -11,24 +11,72 @@ use std::fmt::Display;
 pub struct SpanStyle {
     bold: bool,
     italic: bool,
+    footnote: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SpanStyleEl {
+    Bold,
+    Italic,
+    Footnote,
+}
+
+impl SpanStyleEl {
+    fn open(self) -> &'static str {
+        match self {
+            SpanStyleEl::Bold => "<b>",
+            SpanStyleEl::Italic => "<i>",
+            SpanStyleEl::Footnote => r#"<aside role="doc-footnote">"#,
+        }
+    }
+
+    fn close(self) -> &'static str {
+        match self {
+            SpanStyleEl::Bold => "</b>",
+            SpanStyleEl::Italic => "</i>",
+            SpanStyleEl::Footnote => r#"</aside>"#,
+        }
+    }
+}
+
+impl From<SpanStyleEl> for SpanStyle {
+    fn from(value: SpanStyleEl) -> Self {
+        match value {
+            SpanStyleEl::Bold => SpanStyle {bold: true, ..SpanStyle::none()},
+            SpanStyleEl::Italic => SpanStyle {italic: true, ..SpanStyle::none()},
+            SpanStyleEl::Footnote => SpanStyle {footnote: true, ..SpanStyle::none()},
+        }
+    }
 }
 
 impl SpanStyle {
-    pub fn is_none(self) -> bool {
-        self == Self::default()
+    pub const fn none() -> Self {
+        SpanStyle { bold: false, italic: false, footnote: false }
+    }
+
+    pub const fn is_none(self) -> bool {
+        matches!(self, SpanStyle { bold: false, italic: false, footnote: false })
+    }
+
+    pub fn el_iter(self) -> impl DoubleEndedIterator<Item = SpanStyleEl> {
+        [
+            self.bold.then_some(SpanStyleEl::Bold),
+            self.italic.then_some(SpanStyleEl::Italic),
+            self.footnote.then_some(SpanStyleEl::Footnote),
+        ].into_iter().flatten()
     }
 
     pub const fn bold() -> Self {
         SpanStyle {
             bold: true,
-            italic: false,
+            ..Self::none()
         }
     }
 
     pub const fn italic() -> Self {
         SpanStyle {
-            bold: false,
             italic: true,
+            ..Self::none()
         }
     }
 
@@ -36,23 +84,32 @@ impl SpanStyle {
         SpanStyle {
             bold: true,
             italic: true,
+            ..Self::none()
         }
     }
 
     /// styles needed to be enabled to get to `to`
-    fn additional_needed(self, to: Self) -> Self {
+    const fn additional_needed(self, to: Self) -> Self {
         Self {
             bold: !self.bold & to.bold,
             italic: !self.italic & to.italic,
+            footnote: !self.footnote & to.footnote,
         }
     }
 
     /// styles needed to be disabled to get to `to`
-    fn removals_needed(self, to: Self) -> Self {
+    const fn removals_needed(self, to: Self) -> Self {
         Self {
             bold: self.bold & !to.bold,
             italic: self.italic & !to.italic,
+            footnote: self.footnote & !to.footnote,
         }
+    }
+}
+
+impl FromIterator<SpanStyleEl> for SpanStyle {
+    fn from_iter<T: IntoIterator<Item = SpanStyleEl>>(iter: T) -> Self {
+        iter.into_iter().fold(SpanStyle::none(), |acc, x| acc + x)
     }
 }
 
@@ -63,6 +120,7 @@ impl std::ops::Add for SpanStyle {
         Self {
             bold: self.bold | rhs.bold,
             italic: self.italic | rhs.italic,
+            footnote: self.footnote | rhs.footnote,
         }
     }
 }
@@ -72,6 +130,22 @@ impl std::ops::AddAssign for SpanStyle {
         *self = *self + rhs
     }
 }
+
+impl std::ops::Add<SpanStyleEl> for SpanStyle {
+    type Output = Self;
+
+    fn add(self, rhs: SpanStyleEl) -> Self::Output {
+        self + Self::from(rhs)
+    }
+}
+
+impl std::ops::AddAssign<SpanStyleEl> for SpanStyle {
+    fn add_assign(&mut self, rhs: SpanStyleEl) {
+        *self = *self + rhs
+    }
+}
+
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ParagraphStyle {
@@ -152,45 +226,28 @@ impl Display for InlineElement<'_> {
                 InlineElement::LineFeed => write!(f, " "),
             }
         } else {
-            let content = match *self {
-                Self::EnableStyles(SpanStyle {
-                    bold: true,
-                    italic: true,
-                }) => "<b><i>",
-                Self::EnableStyles(SpanStyle {
-                    bold: true,
-                    italic: false,
-                }) => "<b>",
-                Self::EnableStyles(SpanStyle {
-                    bold: false,
-                    italic: true,
-                }) => "<i>",
-                Self::DisableStyles(SpanStyle {
-                    bold: true,
-                    italic: true,
-                }) => "</i></b>",
-                Self::DisableStyles(SpanStyle {
-                    bold: true,
-                    italic: false,
-                }) => "</b>",
-                Self::DisableStyles(SpanStyle {
-                    bold: false,
-                    italic: true,
-                }) => "</i>",
-                Self::EnableStyles(SpanStyle {
-                    bold: false,
-                    italic: false,
-                })
-                | Self::DisableStyles(SpanStyle {
-                    bold: false,
-                    italic: false,
-                }) => unreachable!("empty style transition is invalid"),
-                Self::Text(txt) => {
-                    return write!(f, "{}", EscapeBody(txt));
+            match *self {
+                Self::EnableStyles(s) | Self::DisableStyles(s) if s.is_none() => {
+                    unreachable!("empty style transition is invalid and should never be created")
+                },
+                Self::EnableStyles(s) => {
+                    for el in s.el_iter() {
+                        write!(f, "{}", el.open())?
+                    }
                 }
-                InlineElement::LineFeed => "<br />\n",
+                Self::DisableStyles(s) => {
+                    for el in s.el_iter().rev() {
+                        write!(f, "{}", el.close())?
+                    }
+                }
+                Self::Text(txt) => {
+                    write!(f, "{}", EscapeBody(txt))?;
+                }
+                InlineElement::LineFeed => {
+                    writeln!(f, "<br />")?;
+                },
             };
-            write!(f, "{content}")
+            Ok(())
         }
     }
 }

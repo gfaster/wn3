@@ -81,7 +81,7 @@ pub struct ObjectCache {
 impl ObjectCache {
     pub fn new(conn: Connection) -> Result<Self> {
         conn.execute_batch("
-CREATE TABLE IF NOT EXISTS cache_entries (id INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE IF NOT EXISTS cache_entries (id INTEGER PRIMARY KEY,
                             url TEXT KEY,
                             type INTEGER,
                             content BLOB);

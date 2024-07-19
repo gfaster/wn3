@@ -1,13 +1,14 @@
-use std::{error::Error, time::Duration};
+use std::time::Duration;
 
 use bytes::Bytes;
-use cache::{MediaType, ObjectCache};
 use ratelimit::wait_your_turn;
+use anyhow::Result;
 
 mod cache;
-mod ratelimit;
+use cache::ObjectCache;
+pub use cache::MediaType;
 
-pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
+mod ratelimit;
 
 pub struct FetchContext {
     cache: cache::ObjectCache,
@@ -33,9 +34,10 @@ impl FetchContext {
             .trim_start_matches("s")
             .trim_start_matches("://");
         let domain = no_protocol.split_once('/').map_or(no_protocol, |(x, _rem)| x);
-        eprintln!("getting in line to access {domain:?}");
+        eprint!("getting in line to access {domain:?}\r");
 
-        wait_your_turn(domain, Duration::from_secs(5)).await;
+        wait_your_turn(domain, Duration::from_secs(60)).await;
+        eprintln!("fetching url {url}");
 
         // check cache again in case this was stored earlier
         if let Some(bytes) = self.cache.get_bytes(url).unwrap() {

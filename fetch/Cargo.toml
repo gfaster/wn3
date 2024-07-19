@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.86"
 bytes = "1.6.0"
 reqwest = "0.12.5"
 rusqlite = {version = "0.31.0", features = ["blob", "url"]}

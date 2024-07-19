@@ -1,7 +1,8 @@
 //! common rules that should rarely be overriden
 
-use generate::{chapter::SpanStyle, ChapterBuilder};
+use generate::{chapter::SpanStyle, Chapter, ChapterBuilder};
 use scraper::{node::Element, ElementRef, Html, Selector};
+use anyhow::{Context, Result};
 
 type FnExclude = Box<dyn Fn(&ElementRef) -> bool>;
 type FnNext = Box<dyn Fn(&Html) -> Option<&str>>;
@@ -14,23 +15,26 @@ pub struct Rules {
 }
 
 fn mk_next_chapter_il() -> FnNext {
-    let candidates = Selector::parse("#main p:last-of-type a:last-of-type").unwrap();
+    let candidates = Selector::parse("#main p a:last-of-type").unwrap();
     Box::new(move |html| {
-        let el = html.select(&candidates).next()?;
+        let el = html.select(&candidates).last()?;
         el.attr("href")
     })
 }
 
 fn mk_exclude_il() -> FnExclude {
-    let candidates = Selector::parse(".sharedaddy,p a").unwrap();
+    let candidates = Selector::parse(".sharedaddy,p a,script").unwrap();
     Box::new(move |el| {
         for e in el.select(&candidates) {
+            if e.value().name() == "script" {
+                return true
+            }
             if let Some(class) = e.attr("class") {
                 if class.contains("sharedaddy") {
                     return true
                 }
             }
-            if e.text().any(|t| t.contains("Next Chapter")) {
+            if e.text().any(|t| t.contains("Next Chapter") || t.contains("Previous Chapter")) {
                 return true
             }
         }
@@ -55,9 +59,7 @@ impl Rules {
         }
     }
 
-    pub fn parse(&self, html_file: &str) {
-        let html = std::fs::read_to_string(html_file).unwrap();
-        let html = Html::parse_document(&html);
+    pub fn parse<'a>(&self, html: &'a Html) -> Result<(Chapter<'a>, Option<&'a str>)> {
         let mut ch = ChapterBuilder::new();
         ch.title_set((self.title)(&html));
 
@@ -72,8 +74,9 @@ impl Rules {
             // }
         }
         let next = (self.next_chapter)(&html);
-        eprintln!("{:#}", ch.finish().expect("valid chapter"));
-        println!("{next:?}");
+        let ch = ch.finish().context("invalid chapter")?;
+        // println!("{next:?}");
+        Ok((ch, next))
     }
 
     fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>) {
@@ -86,6 +89,8 @@ impl Rules {
                 scraper::Node::Text(txt) => {
                     for line in txt.split("<br>") {
                         ch.add_text(line);
+                        // use separate LF to allow for customized handling of <br> tags
+                        ch.add_text("\n");
                     }
                 },
                 scraper::Node::Element(e) => {

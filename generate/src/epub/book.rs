@@ -116,7 +116,7 @@ impl<'a> EpubBuilder<'a> {
         }
 
 
-        let spec = self.opf.finish().unwrap();
+        let spec = self.opf.finish().map_err(|e| eprintln!("{e:?}")).unwrap();
 
         zip.start_file("EPUB/nav.xhtml", compressed.clone())?;
         write_nav(&mut zip, spec.title(), &chunks)?;
