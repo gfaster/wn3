@@ -25,6 +25,8 @@ tokio = { version = "1.38.1", features = ["full"] }
 rusqlite = "0.31.0"
 reqwest = "0.12.5"
 markup5ever = "0.12.0"
+clap = { version = "4.5.9", features = ["derive"] }
+ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
 
 [patch.crates-io]
 ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}

@@ -1,3 +1,2 @@
 pub mod support;
-
-mod sponsored_chapter_basic;
+mod basic_sponsored_chapter_strip;

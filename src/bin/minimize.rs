@@ -1,53 +1,103 @@
+use clap::Parser;
+use ego_tree::NodeId;
 use markup5ever::namespace_url;
 use markup5ever::{interface::{tree_builder::TreeSink, NodeOrText}, ns, LocalName, QualName};
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use regex_lite::Regex;
-use scraper::{Html, Node};
+use scraper::{Html, Node, Selector};
 use wn3::common::Rules;
 
-#[allow(dead_code)]
-enum Mode {
-    Match,
-    NoMatch,
+const BAD_NEXT: &str = "https://example.com/not_next";
+const GOOD_NEXT: &str = "https://example.com/next";
+
+fn set_attr(html: &mut Html, id: NodeId, attr: &str, val: &str) {
+    let qualname = QualName::new(None, ns!(), LocalName::from(attr));
+    let mut node = html.tree.get_mut(id).expect("node id not in tree");
+    let Node::Element(el) = node.value() else { panic!("node id {id:?} is not an element") };
+    *el.attrs.get_mut(&qualname).unwrap() = val.into();
 }
 
-fn args() -> (Regex, Mode, String) {
-    let mut it = std::env::args();
-    it.next();
-    let mut m = None;
-    let mut r = None;
-    let mut f = None;
+fn args() -> (Html, ValidateRule) {
+    let Args {
+        file,
+        no_match,
+        must_match,
+        no_contain,
+        must_contain,
+        no_next,
+        next_url,
+        xml,
+    } = Args::parse();
+    let f = std::fs::read_to_string(file).unwrap();
+    let mut next_must_be = None;
+    let mut html = Html::parse_document(&f);
+    drop(f);
+    if let Some(next) = next_url {
+        next_must_be = Some(true);
 
-    while let Some(a) = it.next() {
-        match &*a {
-            "--match" => {
-                assert!(r.is_none(), "can only specify one pattern");
-                let pat = it.next().expect("--match requires pattern");
-                r = Some(Regex::new(&pat).expect("invalid pattern"));
-                m = Some(Mode::Match);
-            },
-            "--no-match" => {
-                todo!("idk how I want to implement this");
-                // assert!(r.is_none(), "can only specify one pattern");
-                // let pat = it.next().expect("--no-match requires pattern");
-                // r = Some(Regex::new(&pat).expect("invalid pattern"));
-                // m = Some(Mode::NoMatch);
-            },
-            _ => {
-                assert!(f.is_none(), "can only specify one file");
-                assert!(a.ends_with(".html"), "can only specify html files");
-                f = Some(a);
-            }
+        let selector = Selector::parse("a").unwrap();
+        let link_ids: Vec<_> = html.select(&selector).filter_map(|e| e.attr("href").map(|href| (e.id(), href == next))).collect();
+        for (id, is_next) in link_ids {
+            let href = if is_next { GOOD_NEXT } else { BAD_NEXT };
+            set_attr(&mut html, id, "href", href);
         }
     }
-
-    (
-        r.unwrap(),
-        m.expect("requires either --match or --no-match"),
-        f.expect("requires file"),
-    )
+    if no_next {
+        next_must_be = Some(false);
+    }
+    let serialization_style = if xml { SerStyle::Xml } else { SerStyle::Markdown };
+    let validate = ValidateRule {
+        no_match,
+        must_match,
+        no_contain,
+        must_contain,
+        next_must_be,
+        serialization_style,
+    };
+    (html, validate)
 }
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(name = "HTML_FILE")]
+    file: PathBuf,
+
+    /// the generated chapter incorrectly does not match the regex (prefer no-contain for simple
+    /// strings)
+    #[arg(long, value_parser = Regex::new)]
+    no_match: Vec<Regex>,
+
+    /// the generated chapter incorrectly matches the regex (prefer must-contain for simple
+    /// strings)
+    #[arg(long, value_parser = Regex::new)]
+    must_match: Vec<Regex>,
+
+    /// the generated chapter incorrectly omits this string (prefer this over no-match)
+    #[arg(long)]
+    no_contain: Vec<String>,
+
+    /// the generated chapter incorrectly contains this string (prefer this over must-match)
+    #[arg(long)]
+    must_contain: Vec<String>,
+
+    /// the next url is incorrectly found (it should be None)
+    #[arg(long, group = "next")]
+    no_next: bool,
+
+    /// the next url should be this, but isn't
+    #[arg(long, group = "next")]
+    next_url: Option<String>,
+
+    /// if the serialization should be done in XML-style instead of markdown
+    ///
+    /// Note: XML is invalid (ie just a fragment)
+    #[arg(long, short)]
+    xml: bool
+}
+
 
 fn main() {
     use std::io::prelude::*;
@@ -57,11 +107,10 @@ fn main() {
         panic!("could not read tests/generated dir")
     }
 
-    let (regex, _mode, src_file) = args();
-    let src_file = std::fs::read_to_string(&src_file).expect("could not open src file");
+    let (html, validator) = args();
 
     let rules = Rules::new();
-    let html = minimize(&src_file, &regex, &rules);
+    let html = minimize(&validator, html, &rules);
 
     println!("minimization complete:");
     println!("{}", html.html());
@@ -99,35 +148,160 @@ fn main() {
         test_name = trimmed.to_owned();
         break
     }
-    create_test(&test_name, &regex, &html)
+    create_test(&test_name, &validator, &html)
 }
 
-fn create_test(test_name: &str, r: &Regex, html: &Html) {
+fn create_test(test_name: &str, validation: &ValidateRule, html: &Html) {
     use std::io::prelude::*;
-
-    {
+    let html = html.html();
+    let separate_test_file = html.len() > 1024 * 2;
+    if separate_test_file {
         let in_path = format!("tests/generated/{test_name}.input.html");
-        std::fs::write(&in_path, &html.html()).unwrap();
+        std::fs::write(&in_path, &html).unwrap();
     }
     {
         let test_path = format!("tests/generated/{test_name}.rs");
         let mut f = std::fs::File::create_new(&test_path).unwrap();
-        let r = r.to_string();
-        let r = r.escape_default();
-        writeln!(f, "use crate::support::match_test_v1 as match_test;\n").unwrap();
+        if !separate_test_file {
+            writeln!(f, r#"const HTML: &str = "{}";"#, html.escape_default()).unwrap();
+            writeln!(f).unwrap();
+        }
         writeln!(f, "#[test]").unwrap();
-        writeln!(f, "fn should_not_match() {{").unwrap();
-        writeln!(f, r###"    match_test("{test_name}", r##"{r}"##)"###).unwrap();
+        writeln!(f, "fn t() {{").unwrap();
+        if separate_test_file {
+            let in_path = format!("tests/generated/{test_name}.input.html");
+            writeln!(f, r#"    let html: &str = &std::fs::read_to_string("{in_path}").unwrap();"#).unwrap();
+            writeln!(f, r#"    let html: scraper::HTML::parse_document(html);"#).unwrap();
+        } else {
+            writeln!(f, "    let html = scraper::Html::parse_document(HTML);").unwrap();
+        }
+        for line in validation.test_code() {
+            writeln!(f, "    {line}").unwrap();
+        }
         writeln!(f, "}}").unwrap();
         eprintln!("wrote to {test_path}");
+        match std::process::Command::new("rustfmt").arg(&test_path).output() {
+            Ok(_) => (),
+            Err(e) => eprintln!("failed to rustfmt: {e}"),
+        }
+        eprintln!("content of {test_path}:");
+        eprintln!("{}", std::fs::read_to_string(test_path).unwrap());
     }
     let mut f = std::fs::OpenOptions::new().append(true).open("tests/generated/main.rs").unwrap();
     writeln!(f, "mod {test_name};").unwrap();
 }
 
-fn minimize(html: &str, r: &Regex, rule: &Rules) -> Html {
-    let mut html_string = html.to_owned();
-    let mut html = Html::parse_document(&html_string);
+enum SerStyle {
+    /// not fully valid xml, just that of a single chapter
+    Xml,
+    Markdown,
+}
+
+/// validation rule - somewhat confusing
+///
+/// we are validating if the *test case still causes a bug*. 
+///
+/// # Example
+///
+/// If a bad generator output contains the string "ad preferences" in the chapter, the
+/// `ValidateRule` would be `must_contain: vec!["ad preferences"]`
+struct ValidateRule {
+    no_match: Vec<Regex>,
+    must_match: Vec<Regex>,
+    no_contain: Vec<String>,
+    must_contain: Vec<String>,
+    /// should have next, url always replaced with `"https://example.com/not_next"`
+    ///
+    /// the test input transformation is valid if...
+    /// - `Some(false)`: generator finds no next url
+    /// - `Some(true)`: generator finds next url that is `not_next` (ie the expected wrong url)
+    next_must_be: Option<bool>,
+    serialization_style: SerStyle,
+}
+
+impl ValidateRule {
+    fn test_code(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        out.push("#[allow(unused)]".into());
+        out.push(r#"let (ch, next) = wn3::common::Rules::new().parse(&html).expect("failed to parse");"#.into());
+
+        let ser = match self.serialization_style {
+            SerStyle::Xml => r#"format!("{ch}")"#,
+            SerStyle::Markdown => r#"format!("{ch:#}")"#,
+        };
+        out.push(format!("let t = {ser};"));
+        out.push(r#"println!("==== begin output ====\n{t}\n====  end output  ====");"#.into());
+
+
+        for m in &self.no_contain {
+            out.push(format!(r#"assert!(t.contains("{0}"), "output doesn't contain \"{0}\"");"#, m.escape_default()))
+        }
+        for m in &self.must_contain {
+            out.push(format!(r#"assert!(!t.contains("{0}"), "output contains \"{0}\"");"#, m.escape_default()))
+        }
+        for m in &self.no_match {
+            let m = m.to_string();
+            let m = m.escape_default();
+            out.push(format!(r#"let r = regex_lite::Regex::parse("{m}").unwrap();"#));
+            out.push(format!(r#"assert!(r.is_match(&t), "output doesn't match /{m}/");"#))
+        }
+        for m in &self.must_match {
+            let m = m.to_string();
+            let m = m.escape_default();
+            out.push(format!(r#"let r = regex_lite::Regex::parse("{m}").unwrap();"#));
+            out.push(format!(r#"assert!(!r.is_match(&t), "output match /{m}/");"#))
+        }
+
+        out
+    }
+    fn is_valid(&self, html: &Html, rule: &Rules) -> bool {
+        // need to serialize and re-parse because (I suspect) caching internally
+        // This may be able to be avoid by adding a no-cache feature to scraper, but I'd have to
+        // look more closely at a lot of code
+        let html = Html::parse_document(&html.html());
+        let Ok((ch, next)) = rule.parse(&html) else { return false };
+        if let Some(next_must_be) = self.next_must_be {
+            match (next_must_be, next) {
+                (true, Some("https://example.com/not_next")) |
+                (false, None) => (),
+                (false, Some(_)) |
+                (true, _) => return false,
+            }
+        }
+
+        let txt = match self.serialization_style {
+            SerStyle::Xml => format!("{ch}"),
+            SerStyle::Markdown => format!("{ch:?}"),
+        };
+
+        for matcher in &self.no_contain {
+            if txt.contains(matcher) {
+                return false
+            }
+        }
+        for matcher in &self.must_contain {
+            if !txt.contains(matcher) {
+                return false
+            }
+        }
+        for matcher in &self.no_match {
+            if matcher.is_match(&txt) {
+                return false
+            }
+        }
+        for matcher in &self.must_match {
+            if !matcher.is_match(&txt) {
+                return false
+            }
+        }
+
+        true
+    }
+}
+
+fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
+    assert!(validation.is_valid(&html, rule));
+
     let mut required = HashSet::new();
     let root_el_id = html.root_element().id();
     let root_id = html.tree.root().id();
@@ -145,9 +319,7 @@ fn minimize(html: &str, r: &Regex, rule: &Rules) -> Html {
         let parent = el.parent().map(|e| e.id()).expect("all removable nodes have parents");
         // let before = html.html();
         html.remove_from_parent(&id);
-        let new_html_string = html.html();
-        if is_valid(&new_html_string, r, rule) {
-            html_string = new_html_string;
+        if validation.is_valid(&html, rule) {
             continue
         } else {
             // eprintln!("need element {:?}", html.tree.get(id).unwrap().value());
@@ -162,8 +334,8 @@ fn minimize(html: &str, r: &Regex, rule: &Rules) -> Html {
         // assert_eq!(before, after_restore);
     }
     eprintln!("tree elimination complete");
-    html_string.shrink_to_fit();
-    html = Html::parse_document(&html_string);
+    html = Html::parse_document(&html.html());
+
     required = HashSet::new();
     required.insert(root_el_id);
     required.insert(root_id);
@@ -180,7 +352,7 @@ fn minimize(html: &str, r: &Regex, rule: &Rules) -> Html {
             html.append_before_sibling(&id, NodeOrText::AppendNode(child))
         }
         html.remove_from_parent(&id);
-        if is_valid(&html.html(), r, rule) {
+        if validation.is_valid(&html, rule) {
             // eprintln!("don't need element {:?}", html.tree.get(id).unwrap().value());
             continue
         }
@@ -206,7 +378,7 @@ fn minimize(html: &str, r: &Regex, rule: &Rules) -> Html {
             let node = node.value();
             let Node::Element(e) = node else { panic!() };
             e.attrs.insert(qualname.clone(), classes.iter().map(|&c| c).filter(|&c| c != class).collect::<Vec<_>>().join(" ").into()).unwrap();
-            if is_valid(&html.html(), r, rule) {
+            if validation.is_valid(&html, rule) {
                 classes.remove(class);
             }
         }
@@ -222,7 +394,7 @@ fn minimize(html: &str, r: &Regex, rule: &Rules) -> Html {
             let node = node.value();
             let Node::Element(e) = node else { panic!() };
             let prev = e.attrs.remove(&attr.0).unwrap();
-            if is_valid(&html.html(), r, rule) {
+            if validation.is_valid(&html, rule) {
                 // eprintln!(r#"attr {}="{prev}" is uneeded"#, attr.0.local);
                 continue
             }
@@ -234,23 +406,10 @@ fn minimize(html: &str, r: &Regex, rule: &Rules) -> Html {
     }
     eprintln!("attribute stripping complete");
 
-    assert!(is_valid(&html.html(), r, rule));
+    assert!(validation.is_valid(&html, rule));
 
     html
 }
 
 
 
-// for whatever reason, we have to parse again for changes to show properly
-fn is_valid(html: &str, r: &Regex, rule: &Rules) -> bool {
-    // use std::sync::atomic::*;
-    // static A: AtomicU64 = AtomicU64::new(1);
-    // eprintln!("check #{}", A.fetch_add(1, Ordering::Relaxed));
-
-    let html = Html::parse_document(&html);
-    rule.parse(&html).is_ok_and(|(ch, _nxt)| {
-        let ch = ch.to_string();
-        // println!("{ch}");
-        r.is_match(&ch)
-    })
-}
