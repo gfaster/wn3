@@ -26,7 +26,7 @@ impl FetchContext {
     pub async fn fetch(&self, url: &str) -> Result<(MediaType, Bytes)> {
         let url = url.trim();
         if let Some(bytes) = self.cache.get_bytes(url).unwrap() {
-            eprintln!("{url:?} found in cache");
+            // eprintln!("{url:?} found in cache");
             return Ok(bytes)
         }
         let no_protocol = url

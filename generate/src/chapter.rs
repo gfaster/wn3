@@ -165,6 +165,51 @@ pub struct Paragraph<'a> {
     elms: Vec<InlineElement<'a>>,
 }
 
+#[derive(Debug)]
+pub struct Image {
+    /// this will need to be acquired from the Store in such a way that we don't duplicate images
+    id: u64,
+    pub alt: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum MajorElement<'a> {
+    Paragraph {
+        style: ParagraphStyle,
+        elms: Vec<InlineElement<'a>>,
+    },
+    Image(Box<Image>),
+    SectionSep,
+}
+
+impl Display for MajorElement<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self, f.alternate()) {
+            (MajorElement::Paragraph { style, elms }, true) => {
+                let prefix = match style.mode {
+                    ParagraphMode::Normal => "",
+                    ParagraphMode::BlockQuote => "> ",
+                };
+                f.write_str(prefix)?;
+                let disp = elms.disp_join("");
+                disp.fmt(f)
+            },
+            (MajorElement::Paragraph { style, elms }, false) => {
+                let tag = match style.mode {
+                    ParagraphMode::Normal => "p",
+                    ParagraphMode::BlockQuote => "blockquote",
+                };
+                let disp = TagSurround::new(tag, elms.disp_join(""));
+                disp.fmt(f)
+            },
+            (MajorElement::Image(_), true) => todo!(),
+            (MajorElement::Image(_), false) => todo!(),
+            (MajorElement::SectionSep, true) => "---".fmt(f),
+            (MajorElement::SectionSep, false) => "<hr />".fmt(f),
+        }
+    }
+}
+
 impl Display for Paragraph<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
@@ -256,7 +301,7 @@ impl Display for InlineElement<'_> {
 pub struct Chapter<'a> {
     id: u32,
     title: Box<str>,
-    p: Vec<Paragraph<'a>>,
+    p: Vec<MajorElement<'a>>,
 }
 
 impl Display for Chapter<'_> {
@@ -293,7 +338,9 @@ impl Chapter<'_> {
 
     /// approximate size in bytes - tries to be an overestimate
     pub fn size(&self) -> usize {
-        self.p.iter().map(|p| p.elms.iter().map(|e| e.size()).sum::<usize>() + 8).sum::<usize>() + 64
+        self.p.iter().filter_map(|e| {
+            if let MajorElement::Paragraph { elms, .. } = e { Some(elms) } else { None }
+        }).map(|elms| elms.iter().map(|e| e.size()).sum::<usize>() + 8).sum::<usize>() + 64
     }
 }
 
@@ -309,7 +356,7 @@ pub struct ChapterBuilder<'a> {
 
     current_p: Vec<InlineElement<'a>>,
 
-    complete_p: Vec<Paragraph<'a>>,
+    complete_p: Vec<MajorElement<'a>>,
 
     // referenced_resources: HashSet<&'a str>,
 }
@@ -410,7 +457,14 @@ impl<'a> ChapterBuilder<'a> {
         }
         let spans = std::mem::take(&mut self.current_p);
         let style = std::mem::take(&mut self.paragraph_style);
-        self.complete_p.push(Paragraph { elms: spans, style });
+        self.complete_p.push(MajorElement::Paragraph { elms: spans, style });
+        self
+    }
+
+    /// adds a horizontal separator (`<hr>`). Implicitly completes the paragraph
+    pub fn add_separator(&mut self) -> &mut Self {
+        self.paragraph_finish();
+        self.complete_p.push(MajorElement::SectionSep);
         self
     }
 

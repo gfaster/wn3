@@ -1,3 +1,4 @@
 pub mod support;
 mod basic_sponsored_chapter_strip;
 mod sponsored_chapter_remove_doesnt_clip_body;
+mod strip_sponsored_and_no_clip;

@@ -1,7 +1,8 @@
 //! common rules that should rarely be overriden
 
+use ego_tree::NodeRef;
 use generate::{chapter::SpanStyle, Chapter, ChapterBuilder};
-use scraper::{node::Element, ElementRef, Html, Selector};
+use scraper::{node::Element, ElementRef, Html, Node, Selector};
 use anyhow::{Context, Result};
 
 type FnExclude = Box<dyn Fn(&ElementRef) -> bool>;
@@ -52,7 +53,7 @@ fn mk_title_il() -> FnTitle {
 impl Rules {
     pub fn new() -> Self {
         Rules {
-            paragraphs: Selector::parse("#main p").unwrap(),
+            paragraphs: Selector::parse("body *.entry-content p,hr").unwrap(),
             exclude: mk_exclude_il(),
             next_chapter: mk_next_chapter_il(),
             title: mk_title_il(),
@@ -67,7 +68,7 @@ impl Rules {
             if (self.exclude)(&el) {
                 continue
             }
-            Rules::descend(&mut ch, el);
+            Rules::descend(&mut ch, *el);
             ch.paragraph_finish();
             // for txt in el.text() {
             //     println!("{txt}")
@@ -75,37 +76,43 @@ impl Rules {
         }
         let next = (self.next_chapter)(&html);
         let ch = ch.finish().context("invalid chapter")?;
-        // println!("{next:?}");
+        // println!("{ch:#}\n");
         Ok((ch, next))
     }
 
-    fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>) {
-        for child in el.children() {
-            match child.value() {
-                scraper::Node::Document => (),
-                scraper::Node::Fragment => (),
-                scraper::Node::Doctype(_) => (),
-                scraper::Node::Comment(_) => (),
-                scraper::Node::Text(txt) => {
-                    for line in txt.split("<br>") {
-                        ch.add_text(line);
-                        // use separate LF to allow for customized handling of <br> tags
+    fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>) {
+        match el.value() {
+            scraper::Node::Document => (),
+            scraper::Node::Fragment => (),
+            scraper::Node::Doctype(_) => (),
+            scraper::Node::Comment(_) => (),
+            scraper::Node::Text(txt) => {
+                ch.add_text(txt);
+            },
+            scraper::Node::Element(e) => {
+                match e.name() {
+                    "hr" => {
+                        ch.add_separator();
+                    },
+                    "br" => {
                         ch.add_text("\n");
                     }
-                },
-                scraper::Node::Element(e) => {
-                    let prev_style = ch.span_style;
-                    if is_italics_tag(e) {
-                        ch.span_style += SpanStyle::italic();
+                    _ => {
+                        let prev_style = ch.span_style;
+                        if is_italics_tag(e) {
+                            ch.span_style += SpanStyle::italic();
+                        }
+                        if is_bold_tag(e) {
+                            ch.span_style += SpanStyle::bold();
+                        }
+                        for child in el.children() {
+                            Rules::descend(ch, child);
+                        }
+                        ch.span_style_set(prev_style);
                     }
-                    if is_bold_tag(e) {
-                        ch.span_style += SpanStyle::bold();
-                    }
-                    Rules::descend(ch, ElementRef::wrap(child).unwrap());
-                    ch.span_style_set(prev_style);
-                },
-                scraper::Node::ProcessingInstruction(_) => (),
-            }
+                }
+            },
+            scraper::Node::ProcessingInstruction(_) => (),
         }
     }
 }

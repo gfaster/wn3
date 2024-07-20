@@ -187,7 +187,7 @@ fn create_test(test_name: &str, validation: &ValidateRule, html: &Html) {
             writeln!(f).unwrap();
         }
         writeln!(f, "#[test]").unwrap();
-        writeln!(f, "fn t() {{").unwrap();
+        writeln!(f, "fn generated() {{").unwrap();
         if separate_test_file {
             let in_path = format!("tests/generated/{test_name}.input.html");
             writeln!(f, r#"    let html: &str = &std::fs::read_to_string("{in_path}").unwrap();"#).unwrap();
@@ -247,7 +247,7 @@ impl <T> CaseType<T> {
 impl<T: CaseRule> CaseType<T> {
     /// note that CaseType doesn't implement CaseRule because CaseType is what does the inverting
     fn check(&self, rendered: &str) -> bool {
-        let res = self.inner().check(rendered);
+        let res = self.inner().satisfies(rendered);
         if self.check_is_neg() {
             !res
         } else {
@@ -270,7 +270,7 @@ impl<T: CaseRule> CaseType<T> {
 
 trait CaseRule {
     /// check the positive case (inverted for negation)
-    fn check(&self, rendered: &str) -> bool;
+    fn satisfies(&self, rendered: &str) -> bool;
 
     /// what will be printed for the positive case
     ///
@@ -282,7 +282,7 @@ trait CaseRule {
 }
 
 impl CaseRule for String {
-    fn check(&self, rendered: &str) -> bool {
+    fn satisfies(&self, rendered: &str) -> bool {
         rendered.contains(self)
     }
 
@@ -296,7 +296,7 @@ impl CaseRule for String {
 }
 
 impl CaseRule for Regex {
-    fn check(&self, rendered: &str) -> bool {
+    fn satisfies(&self, rendered: &str) -> bool {
         self.is_match(rendered)
     }
 
@@ -385,10 +385,53 @@ impl ValidateRule {
 
         true
     }
+
+    #[allow(dead_code)]
+    fn invalid_reasons(&self, html: &Html, rule: &Rules) -> Vec<String> {
+        // need to serialize and re-parse because (I suspect) caching internally
+        // This may be able to be avoid by adding a no-cache feature to scraper, but I'd have to
+        // look more closely at a lot of code
+        let html = Html::parse_document(&html.html());
+        let Ok((ch, next)) = rule.parse(&html) else { 
+            return vec!["failed to parse".into()];
+        };
+        if let Some(next_must_be) = self.next_must_be {
+            match (next_must_be, next) {
+                (true, Some("https://example.com/not_next")) |
+                (false, None) => (),
+                (false, Some(_)) |
+                (true, _) => todo!(),
+            }
+        }
+
+        let txt = match self.serialization_style {
+            SerStyle::Xml => format!("{ch}"),
+            SerStyle::Markdown => format!("{ch:#}"),
+        };
+        let mut ret = Vec::new();
+        for r in &self.contain_rules {
+            if !r.check(&txt) {
+                let neg = if r.check_is_neg() { "negative" } else { "positive" };
+                ret.push(format!("failed {neg} {}", r.inner().fail_msg()))
+            };
+        }
+        for r in &self.regex_rules {
+            if !r.check(&txt) {
+                let neg = if r.check_is_neg() { "negative" } else { "positive" };
+                ret.push(format!("failed {neg} {}", r.inner().fail_msg()))
+            };
+        }
+        ret
+    }
+
+    #[track_caller]
+    fn assert_valid(&self, html: &Html, rule: &Rules) {
+        assert!(self.is_valid(html, rule), "html:\n{}\n\noutput:\n{}\n\nfailed patterns: {:#?}", html.html(), rule.parse(html).map_or_else(|_| "FAILED TO PARSE".into(), |(ch, _)| format!("{ch:#}")), self.invalid_reasons(html, rule))
+    }
 }
 
 fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
-    assert!(validation.is_valid(&html, rule));
+    validation.assert_valid(&html, rule);
 
     let mut required = HashSet::new();
     let root_el_id = html.root_element().id();
@@ -422,6 +465,7 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
         // assert_eq!(before, after_restore);
     }
     eprintln!("tree elimination complete");
+    validation.assert_valid(&html, rule);
     html = Html::parse_document(&html.html());
 
     required = HashSet::new();
@@ -454,6 +498,7 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
         required.insert(id);
     }
     eprintln!("unwrapping complete");
+    assert!(validation.is_valid(&html, rule), "");
 
     let ids: Vec<_> = html.root_element().descendent_elements().filter(|e| e.value().classes().count() > 0).map(|e| e.id()).collect();
     for id in ids {
@@ -470,8 +515,17 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
                 classes.remove(class);
             }
         }
+        let node = &mut html.tree.get_mut(id).unwrap();
+        let node = node.value();
+        let Node::Element(e) = node else { panic!() };
+        if classes.is_empty() {
+            e.attrs.get_mut(&qualname).map(|c| *c = "".into());
+        } else {
+            *e.attrs.get_mut(&qualname).unwrap() = classes.iter().map(|&c| c).collect::<Vec<_>>().join(" ").into();
+        }
     }
     eprintln!("class stripping complete");
+    validation.assert_valid(&html, rule);
 
     // removing unneeded attributes
     let ids: Vec<_> = html.root_element().descendent_elements().map(|e| e.id()).collect();
@@ -507,7 +561,7 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
     // Currently, the best way to do this is with `sed` after we're done
 
 
-    assert!(validation.is_valid(&html, rule));
+    validation.assert_valid(&html, rule);
 
     html
 }
@@ -520,11 +574,11 @@ mod tests {
     #[test]
     fn check_impls() {
         let c = "abc".to_owned();
-        assert!(c.check("xxabcxx"));
-        assert!(c.check("abc"));
+        assert!(c.satisfies("xxabcxx"));
+        assert!(c.satisfies("abc"));
 
         let r = Regex::new("a.c").unwrap();
-        assert!(r.check("abc"));
+        assert!(r.satisfies("abc"));
     }
 
     #[test]
