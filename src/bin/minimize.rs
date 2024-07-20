@@ -29,6 +29,8 @@ fn args() -> (Html, ValidateRule) {
         no_next,
         next_url,
         xml,
+        invariant_match,
+        invariant_contain,
     } = Args::parse();
     let f = std::fs::read_to_string(file).unwrap();
     let mut next_must_be = None;
@@ -47,12 +49,20 @@ fn args() -> (Html, ValidateRule) {
     if no_next {
         next_must_be = Some(false);
     }
+    let mut contain_rules = Vec::with_capacity(no_contain.len() + must_contain.len() + invariant_contain.len());
+    contain_rules.extend(no_contain.into_iter().map(|x| CaseType::FailOmits(x)));
+    contain_rules.extend(must_contain.into_iter().map(|x| CaseType::FailHas(x)));
+    contain_rules.extend(invariant_contain.into_iter().map(|x| CaseType::InvariantHas(x)));
+
+    let mut regex_rules = Vec::with_capacity(no_match.len() + must_match.len() + invariant_match.len());
+    regex_rules.extend(no_match.into_iter().map(|x| CaseType::FailOmits(x)));
+    regex_rules.extend(must_match.into_iter().map(|x| CaseType::FailHas(x)));
+    regex_rules.extend(invariant_match.into_iter().map(|x| CaseType::InvariantHas(x)));
+
     let serialization_style = if xml { SerStyle::Xml } else { SerStyle::Markdown };
     let validate = ValidateRule {
-        no_match,
-        must_match,
-        no_contain,
-        must_contain,
+        regex_rules,
+        contain_rules,
         next_must_be,
         serialization_style,
     };
@@ -75,6 +85,11 @@ struct Args {
     #[arg(long, value_parser = Regex::new)]
     must_match: Vec<Regex>,
 
+    /// the generated chapter correctly matches the regex and must continue to do so (prefer
+    /// invariant-contain for simple strings)
+    #[arg(long, value_parser = Regex::new)]
+    invariant_match: Vec<Regex>,
+
     /// the generated chapter incorrectly omits this string (prefer this over no-match)
     #[arg(long)]
     no_contain: Vec<String>,
@@ -82,6 +97,11 @@ struct Args {
     /// the generated chapter incorrectly contains this string (prefer this over must-match)
     #[arg(long)]
     must_contain: Vec<String>,
+
+    /// the generated chapter correctly contains the string and must continue to do so (prefer
+    /// this over invariant-match)
+    #[arg(long)]
+    invariant_contain: Vec<String>,
 
     /// the next url is incorrectly found (it should be None)
     #[arg(long, group = "next")]
@@ -197,6 +217,98 @@ enum SerStyle {
     Markdown,
 }
 
+enum CaseType<T> {
+    /// both the test case failure and success satisfy this
+    InvariantHas(T),
+    /// what the failing test has, but the passing test does not
+    FailHas(T),
+    /// what the failing test omits, but should be included
+    FailOmits(T),
+}
+
+impl <T> CaseType<T> {
+    fn inner(&self) -> &T {
+        match self {
+            CaseType::InvariantHas(r) |
+            CaseType::FailHas(r) |
+            CaseType::FailOmits(r) => r,
+        }
+    }
+
+    fn check_is_neg(&self) -> bool {
+        match self {
+            CaseType::InvariantHas(_) |
+            CaseType::FailHas(_) => false,
+            CaseType::FailOmits(_) => true,
+        }
+    }
+}
+
+impl<T: CaseRule> CaseType<T> {
+    /// note that CaseType doesn't implement CaseRule because CaseType is what does the inverting
+    fn check(&self, rendered: &str) -> bool {
+        let res = self.inner().check(rendered);
+        if self.check_is_neg() {
+            !res
+        } else {
+            res
+        }
+    }
+
+    fn as_assert(&self) -> String {
+        let is_neg = matches!(self, CaseType::FailHas(_));
+        let stmt = self.inner().as_text();
+        let msg = self.inner().fail_msg();
+        let msg = msg.escape_default();
+        if is_neg {
+            format!(r#"assert!(!{stmt}, "output {msg} incorrectly");"#)
+        } else {
+            format!(r#"assert!({stmt}, "output incorrectly {msg}");"#)
+        }
+    }
+}
+
+trait CaseRule {
+    /// check the positive case (inverted for negation)
+    fn check(&self, rendered: &str) -> bool;
+
+    /// what will be printed for the positive case
+    ///
+    /// the rendered text is `let t: String`
+    fn as_text(&self) -> String;
+
+    /// failure message, verb + self, does not need to escape
+    fn fail_msg(&self) -> String;
+}
+
+impl CaseRule for String {
+    fn check(&self, rendered: &str) -> bool {
+        rendered.contains(self)
+    }
+
+    fn as_text(&self) -> String {
+        format!(r#"t.contains("{}")"#, self.escape_default())
+    }
+
+    fn fail_msg(&self) -> String {
+        format!(r#"contains "{self}""#)
+    }
+}
+
+impl CaseRule for Regex {
+    fn check(&self, rendered: &str) -> bool {
+        self.is_match(rendered)
+    }
+
+    fn as_text(&self) -> String {
+        format!(r#"regex_lite::Regex::parse("{}").unwrap().is_match(&t)"#, self.to_string().escape_default())
+    }
+
+    fn fail_msg(&self) -> String {
+        format!(r#"matches /{self}/"#)
+    }
+}
+
 /// validation rule - somewhat confusing
 ///
 /// we are validating if the *test case still causes a bug*. 
@@ -206,10 +318,8 @@ enum SerStyle {
 /// If a bad generator output contains the string "ad preferences" in the chapter, the
 /// `ValidateRule` would be `must_contain: vec!["ad preferences"]`
 struct ValidateRule {
-    no_match: Vec<Regex>,
-    must_match: Vec<Regex>,
-    no_contain: Vec<String>,
-    must_contain: Vec<String>,
+    regex_rules: Vec<CaseType<Regex>>,
+    contain_rules: Vec<CaseType<String>>,
     /// should have next, url always replaced with `"https://example.com/not_next"`
     ///
     /// the test input transformation is valid if...
@@ -232,28 +342,16 @@ impl ValidateRule {
         out.push(format!("let t = {ser};"));
         out.push(r#"println!("==== begin output ====\n{t}\n====  end output  ====");"#.into());
 
-
-        for m in &self.no_contain {
-            out.push(format!(r#"assert!(t.contains("{0}"), "output doesn't contain \"{0}\"");"#, m.escape_default()))
+        for r in &self.contain_rules {
+            out.push(r.as_assert());
         }
-        for m in &self.must_contain {
-            out.push(format!(r#"assert!(!t.contains("{0}"), "output contains \"{0}\"");"#, m.escape_default()))
-        }
-        for m in &self.no_match {
-            let m = m.to_string();
-            let m = m.escape_default();
-            out.push(format!(r#"let r = regex_lite::Regex::parse("{m}").unwrap();"#));
-            out.push(format!(r#"assert!(r.is_match(&t), "output doesn't match /{m}/");"#))
-        }
-        for m in &self.must_match {
-            let m = m.to_string();
-            let m = m.escape_default();
-            out.push(format!(r#"let r = regex_lite::Regex::parse("{m}").unwrap();"#));
-            out.push(format!(r#"assert!(!r.is_match(&t), "output match /{m}/");"#))
+        for r in &self.regex_rules {
+            out.push(r.as_assert());
         }
 
         out
     }
+
     fn is_valid(&self, html: &Html, rule: &Rules) -> bool {
         // need to serialize and re-parse because (I suspect) caching internally
         // This may be able to be avoid by adding a no-cache feature to scraper, but I'd have to
@@ -271,28 +369,18 @@ impl ValidateRule {
 
         let txt = match self.serialization_style {
             SerStyle::Xml => format!("{ch}"),
-            SerStyle::Markdown => format!("{ch:?}"),
+            SerStyle::Markdown => format!("{ch:#}"),
         };
 
-        for matcher in &self.no_contain {
-            if txt.contains(matcher) {
+        for r in &self.contain_rules {
+            if !r.check(&txt) {
                 return false
-            }
+            };
         }
-        for matcher in &self.must_contain {
-            if !txt.contains(matcher) {
+        for r in &self.regex_rules {
+            if !r.check(&txt) {
                 return false
-            }
-        }
-        for matcher in &self.no_match {
-            if matcher.is_match(&txt) {
-                return false
-            }
-        }
-        for matcher in &self.must_match {
-            if !matcher.is_match(&txt) {
-                return false
-            }
+            };
         }
 
         true
@@ -406,10 +494,49 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
     }
     eprintln!("attribute stripping complete");
 
+    // TODO: attempt to do text substitution
+    // sometimes rules are dependant on only a subset of the text. For example, if we wanted to
+    // strip out translator notes, we might encounter something like this:
+    //
+    // "he unsheathed his tanto. (TLN: a tanto is a japanese shortsword)"
+    //
+    // We don't need the entire note for our test case, we could do with:
+    //
+    // "(TLN: text)"
+    //
+    // Currently, the best way to do this is with `sed` after we're done
+
+
     assert!(validation.is_valid(&html, rule));
 
     html
 }
 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn check_impls() {
+        let c = "abc".to_owned();
+        assert!(c.check("xxabcxx"));
+        assert!(c.check("abc"));
+
+        let r = Regex::new("a.c").unwrap();
+        assert!(r.check("abc"));
+    }
+
+    #[test]
+    fn case_type_negations() {
+        let r = CaseType::InvariantHas("abc".to_owned());
+        assert!(r.check("abc"));
+        assert!(!r.check("a c"));
+        let r = CaseType::FailHas("abc".to_owned());
+        assert!(r.check("abc"));
+        assert!(!r.check("a c"));
+        let r = CaseType::FailOmits("abc".to_owned());
+        assert!(!r.check("abc"));
+        assert!(r.check("a c"));
+    }
+}

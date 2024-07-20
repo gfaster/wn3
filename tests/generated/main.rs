@@ -1,2 +1,3 @@
 pub mod support;
 mod basic_sponsored_chapter_strip;
+mod sponsored_chapter_remove_doesnt_clip_body;
