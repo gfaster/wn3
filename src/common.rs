@@ -28,12 +28,13 @@ impl Rules {
 
     pub fn parse<'a>(&self, html: &'a Html) -> Result<(Chapter<'a>, Option<&'a str>)> {
         let mut ch = ChapterBuilder::new();
-        ch.title_set(self.inner.title(&html));
-        self.inner.parse_body(html, &mut ch)?;
+        let title = self.inner.title(&html);
+        ch.title_set(title.clone());
+        self.inner.parse_body(html, &mut ch).with_context(|| format!("invalid chapter: {title}"))?;
 
         let next = self.inner.next_chapter(&html);
-        let ch = ch.finish().context("invalid chapter")?;
-        // println!("{ch:#}\n");
+        let ch = ch.finish().with_context(|| format!("invalid chapter: {title}"))?;
+        println!("{ch:#}\n");
         Ok((ch, next))
     }
 
@@ -95,8 +96,8 @@ pub fn is_hr(el: &ElementRef) -> bool {
         return true
     }
     if let Some(txt) = el.text().next() {
-        thread_local! { static HR: Regex = Regex::new("^[\u{2014}=-]+$").unwrap(); }
-        return HR.with(|r| r.is_match(txt))
+        thread_local! { static HR: Regex = Regex::new("^[\u{2014}\u{2013}=-]+$").unwrap(); }
+        return HR.with(|r| r.is_match(txt.trim()))
     }
     false
 }
@@ -135,6 +136,8 @@ mod tests {
         assert!(is_hr(&telref!("<p>---</p>", "p")));
         assert!(is_hr(&telref!("<p>===</p>", "p")));
         assert!(is_hr(&telref!("<p>——-</p>", "p")));
+        assert!(is_hr(&telref!("<p>——- </p>", "p")));
+        assert!(is_hr(&telref!("<p>——–</p>", "p")));
         assert!(is_hr(&telref!("<p>—-</p>", "p")));
         assert!(is_hr(&telref!("<p>—</p>", "p")));
         assert!(!is_hr(&telref!("<p>—Great Forest—</p>", "p")));
