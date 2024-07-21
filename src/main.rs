@@ -13,7 +13,7 @@ async fn main() -> Result<()> {
     let def: BookDef = toml::from_str(&f).context("failed to parse config")?;
     def.validate().context("failed to validate def")?;
 
-    let rules = Rules::new();
+    let rules = Rules::new_il();
     let mut book = generate::EpubBuilder::new();
     let conn = rusqlite::Connection::open("cache.db")?;
     let client = reqwest::ClientBuilder::new()

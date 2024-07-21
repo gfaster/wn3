@@ -129,7 +129,7 @@ fn main() {
 
     let (html, validator) = args();
 
-    let rules = Rules::new();
+    let rules = Rules::new_il();
     let html = minimize(&validator, html, &rules);
 
     println!("minimization complete:");
