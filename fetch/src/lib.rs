@@ -2,11 +2,12 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use ratelimit::wait_your_turn;
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 mod cache;
 use cache::ObjectCache;
 pub use cache::MediaType;
+use reqwest::Url;
 
 mod ratelimit;
 
@@ -23,29 +24,32 @@ impl FetchContext {
         })
     }
 
-    pub async fn fetch(&self, url: &str) -> Result<(MediaType, Bytes)> {
-        let url = url.trim();
-        if let Some(bytes) = self.cache.get_bytes(url).unwrap() {
+    /// gets url from store, but will not touch network
+    pub fn fetch_local(&self, _url: &str) -> Result<(MediaType, Bytes)> {
+        todo!()
+    }
+
+    pub async fn fetch(&self, url: &Url) -> Result<(MediaType, Bytes)> {
+        if let Some(bytes) = self.cache.get_bytes(url.as_str()).unwrap() {
             // eprintln!("{url:?} found in cache");
             return Ok(bytes)
         }
-        let no_protocol = url
-            .trim_start_matches("http")
-            .trim_start_matches("s")
-            .trim_start_matches("://");
-        let domain = no_protocol.split_once('/').map_or(no_protocol, |(x, _rem)| x);
-        eprint!("getting in line to access {domain:?}\r");
+        if url.scheme() == "file" {
+            bail!("TODO: handle file:// for url {url}")
+        }
+        let domain = url.domain().unwrap();
+        eprint!("getting in line to access {}\r", domain);
 
         wait_your_turn(domain, Duration::from_secs(60)).await;
         eprintln!("fetching url {url}");
 
         // check cache again in case this was stored earlier
-        if let Some(bytes) = self.cache.get_bytes(url).unwrap() {
+        if let Some(bytes) = self.cache.get_bytes(url.as_str()).unwrap() {
             eprintln!("{url:?} found in cache after waiting");
             return Ok(bytes)
         }
 
-        let res = self.client.get(url).send().await;
+        let res = self.client.get(url.clone()).send().await;
         let resp = match res {
             Ok(succ) => {
                 succ
@@ -67,7 +71,7 @@ impl FetchContext {
         };
         let resp_ty = MediaType::from_str(resp_ty.split_once(';').map_or(resp_ty, |(x, _rem)| x));
         let bytes = resp.bytes().await?;
-        self.cache.set(url, &*bytes, resp_ty)?;
+        self.cache.set(url.as_str(), &*bytes, resp_ty)?;
 
         eprintln!("completed request to {domain:?}");
 

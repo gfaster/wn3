@@ -1,15 +1,19 @@
 //! common rules that should rarely be overriden
 
+use std::borrow::Cow;
+
 use ego_tree::NodeRef;
 use generate::{chapter::SpanStyle, Chapter, ChapterBuilder};
 use regex_lite::Regex;
 use scraper::{node::Element, ElementRef, Html, Node};
 use anyhow::{Context, Result};
 
+use crate::overrides::OverrideSet;
+
 pub trait RuleSet {
     fn title(&self, html: &Html) -> String;
     fn next_chapter<'a>(&self, html: &'a Html) -> Option<&'a str>;
-    fn parse_body<'a>(&self, html: &'a Html, ch: &mut ChapterBuilder<'a>) -> Result<()>;
+    fn parse_body<'a>(&self, html: &'a Html, overrides: &OverrideSet, ch: &mut ChapterBuilder<'a>) -> Result<()>;
     fn parse_multichapter_page<'a>(&self, _html: &'a Html) -> Result<Chapter<'a>> {
         todo!()
     }
@@ -27,10 +31,18 @@ impl Rules {
     }
 
     pub fn parse<'a>(&self, html: &'a Html) -> Result<(Chapter<'a>, Option<&'a str>)> {
+        self.parse_with_overrides(html, &OverrideSet::empty())
+    }
+
+    pub fn parse_with_overrides<'a>(&self, html: &'a Html, overrides: &OverrideSet) -> Result<(Chapter<'a>, Option<&'a str>)> {
         let mut ch = ChapterBuilder::new();
-        let title = self.inner.title(&html);
+        let title = if let Some(title) = &overrides.title {
+            title.to_owned()
+        } else {
+            self.inner.title(&html)
+        };
         ch.title_set(title.clone());
-        self.inner.parse_body(html, &mut ch).with_context(|| format!("invalid chapter: {title}"))?;
+        self.inner.parse_body(html, overrides, &mut ch).with_context(|| format!("invalid chapter: {title}"))?;
 
         let next = self.inner.next_chapter(&html);
         let ch = ch.finish().with_context(|| format!("invalid chapter: {title}"))?;
@@ -47,17 +59,18 @@ impl Rules {
 /// - handles styling
 /// - handles `<hr>` and similar horizontal separators
 /// - converts `<br>` tags to LF for setting-specific handling
-pub fn add_basic<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>) {
-    descend(ch, *el)
+pub fn add_basic<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>, overrides: &OverrideSet) {
+    descend(ch, *el, overrides)
 }
 
-fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>) {
+fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>, overrides: &OverrideSet) {
     match el.value() {
         scraper::Node::Document => (),
         scraper::Node::Fragment => (),
         scraper::Node::Doctype(_) => (),
         scraper::Node::Comment(_) => (),
         scraper::Node::Text(txt) => {
+            let txt = overrides.replacers().fold(Cow::from(&**txt), |acc, sed| sed.apply(acc));
             ch.add_text(txt);
         },
         scraper::Node::Element(e) => {
@@ -78,7 +91,7 @@ fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>) {
                         ch.span_style += SpanStyle::bold();
                     }
                     for child in el.children() {
-                        descend(ch, child);
+                        descend(ch, child, overrides);
                     }
                     ch.span_style_set(prev_style);
                     if e.name() == "p" {

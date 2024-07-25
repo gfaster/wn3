@@ -1,5 +1,7 @@
-use anyhow::{ensure, Context, Result};
-use wn3::*;
+use ahash::HashMap;
+use anyhow::{bail, ensure, Context, Result};
+use url::Url;
+use wn3::{def::Section, overrides::OverrideTracker, *};
 use common::Rules;
 use def::BookDef;
 use fetch::FetchContext;
@@ -22,23 +24,33 @@ async fn main() -> Result<()> {
         .unwrap();
     let cx = FetchContext::new(conn, client).unwrap();
     book.set_title(def.title);
-    book.add_identifier(generate::epub::IdentifierType::Url, def.url);
+    book.add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
+    if let Some(tl) = def.translator {
+        book.add_translator(tl);
+    }
+
+    let sections: HashMap<_, _> = def.sections.into_iter().map(|Section { title, start }| (start, title)).collect();
+    let mut overrides = OverrideTracker::new(def.overrides);
 
     for entry in def.content {
         match entry {
-            def::ContentEntry::UrlRange { ruleset_override, exclude_urls, start, end } => {
-                if let Err(e) = fetch_range(&cx, &mut book, &rules, &start, &end, &exclude_urls).await.context("fetching urls") {
+            def::UrlSelection::Range { start, end } => {
+                if let Err(e) = fetch_range(&cx, &mut book, &rules, start, end, &sections, &mut overrides).await.context("fetching urls") {
                     eprintln!("{e:?}")
                 }
             },
-            def::ContentEntry::Url { ruleset_override, title_override, url } => {
-                if let Err(e) = fetch_range(&cx, &mut book, &rules, &url, &url, &[]).await.context("fetching url") {
+            def::UrlSelection::Url(url) => {
+                if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).await.context("fetching url") {
                     eprintln!("{e:?}")
                 }
             },
-            def::ContentEntry::Section { section_title } => {
-                eprintln!("TODO: use section title ({section_title:?})")
-            },
+            def::UrlSelection::List(list) => {
+                for url in list {
+                    if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).await.context("fetching url") {
+                        eprintln!("{e:?}")
+                    }
+                }
+            }
         }
     }
 
@@ -47,36 +59,38 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rules, start: &str, end: &str, excluded: &[String]) -> anyhow::Result<()> {
+async fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rules, start: Url, end: Url, sections: &HashMap<Url, String>, track: &mut OverrideTracker) -> anyhow::Result<()> {
+    ensure!(start.scheme() == end.scheme(), "start and end must be on the same scheme");
+    ensure!(start.host_str() == end.host_str(), "start and end must be on the same host");
     let mut prev = None;
     let mut curr = start;
     loop {
-        let (ty, val) = cx.fetch(curr).await.context("failed fetching")?;
+        if let Some(section) = sections.get(&curr) {
+            eprintln!("TODO: handle section {section}")
+        }
+        ensure!(curr.scheme() == "https" || curr.scheme() == "file", "url {curr} does not have expected scheme");
+        let (ty, val) = cx.fetch(&curr).await.context("failed fetching")?;
         ensure!(ty == fetch::MediaType::Html, "{ty:?} is of wrong type");
         let html = std::str::from_utf8(&val).context("not valid utf-8")?;
         let html = Html::parse_document(&html);
         let html = Box::leak(Box::new(html));
-        let (ch, next) = rules.parse(html).context("failed to parse")?;
-        if let Some(url) = excluded.iter().find(|url| &**url == curr) {
-            eprintln!("skipping {url:?}");
+        let overrides = track.with_url(&curr);
+        let (ch, next) = rules.parse_with_overrides(html, &overrides).context("failed to parse")?;
+        let next = if let Some(next) = next {
+            Some(Url::parse(next).context("invalid url")?)
         } else {
-            book.add_chapter(ch);
-        }
+            None
+        };
+        book.add_chapter(ch);
         ensure!(prev != next, "url {prev:?} was repeated");
-        prev = Some(curr);
-        let Some(next) = next else { break };
         if curr == end {
             break
         }
+        let Some(next) = next else { bail!("expected more urls (up until {end}) but found no next after {curr}") };
+        prev = Some(curr);
+        ensure!(next.host_str() == end.host_str(), "tried to go to different host for next url: {next}");
         curr = next
     }
     Ok(())
 }
-
-// #[allow(dead_code)]
-// fn test_local() {
-//     let file = std::env::args().nth(1).unwrap_or_else(|| "il-test.html".into());
-//     let html = std::fs::read_to_string(file).unwrap();
-//     Rules::new().parse(&html);
-// }
 

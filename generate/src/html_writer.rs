@@ -216,6 +216,8 @@ impl Display for EscapeMd<'_> {
                 '`' => "\\`",
                 '\\' => "\\\\",
                 '*' => "\\*",
+                '[' => "\\[",
+                ']' => "\\]",
                 _ => continue,
             };
             f.write_str(&raw[last..i])?;

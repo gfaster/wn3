@@ -487,6 +487,7 @@ dependencies = [
 name = "generate"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "time",
  "zip",
 ]
@@ -1859,6 +1860,7 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]
@@ -2138,6 +2140,7 @@ dependencies = [
 name = "wn3"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "anyhow",
  "clap",
  "ego-tree",
@@ -2151,6 +2154,7 @@ dependencies = [
  "serde",
  "tokio",
  "toml",
+ "url",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
-use crate::html_writer::*;
-use std::fmt::Display;
+use crate::{html_writer::*, image::Image};
+use std::{borrow::Cow, fmt::Display};
 
 // struct ImageDesc<'a> {
 //     pub path: Box<str>,
@@ -145,11 +145,18 @@ impl std::ops::AddAssign<SpanStyleEl> for SpanStyle {
     }
 }
 
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Align {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ParagraphStyle {
-    mode: ParagraphMode,
+    pub mode: ParagraphMode,
+    pub align: Align,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -165,12 +172,6 @@ pub struct Paragraph<'a> {
     elms: Vec<InlineElement<'a>>,
 }
 
-#[derive(Debug)]
-pub struct Image {
-    /// this will need to be acquired from the Store in such a way that we don't duplicate images
-    id: u64,
-    pub alt: Option<String>,
-}
 
 #[derive(Debug)]
 pub enum MajorElement<'a> {
@@ -231,11 +232,12 @@ impl Display for Paragraph<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum InlineElement<'a> {
     EnableStyles(SpanStyle),
     DisableStyles(SpanStyle),
     Text(&'a str),
+    TextOwned(Box<str>),
     LineFeed,
 }
 
@@ -247,6 +249,16 @@ impl InlineElement<'_> {
             InlineElement::DisableStyles(_) => 8,
             InlineElement::Text(t) => t.len(),
             InlineElement::LineFeed => 6,
+            InlineElement::TextOwned(t) => t.len(),
+        }
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for InlineElement<'a> {
+    fn from(value: Cow<'a, str>) -> Self {
+        match value {
+            Cow::Borrowed(s) => InlineElement::Text(s),
+            Cow::Owned(s) => InlineElement::TextOwned(s.into_boxed_str()),
         }
     }
 }
@@ -254,7 +266,7 @@ impl InlineElement<'_> {
 impl Display for InlineElement<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            match *self {
+            match self {
                 InlineElement::EnableStyles(style) | InlineElement::DisableStyles(style) => {
                     let surround = match (style.bold, style.italic) {
                         (true, true) => "***",
@@ -268,10 +280,14 @@ impl Display for InlineElement<'_> {
                     let disp = EscapeMd(text);
                     write!(f, "{disp}")
                 }
+                InlineElement::TextOwned(text) => {
+                    let disp = EscapeMd(&text);
+                    write!(f, "{disp}")
+                }
                 InlineElement::LineFeed => write!(f, " "),
             }
         } else {
-            match *self {
+            match self {
                 Self::EnableStyles(s) | Self::DisableStyles(s) if s.is_none() => {
                     unreachable!("empty style transition is invalid and should never be created")
                 },
@@ -287,6 +303,9 @@ impl Display for InlineElement<'_> {
                 }
                 Self::Text(txt) => {
                     write!(f, "{}", EscapeBody(txt))?;
+                }
+                Self::TextOwned(txt) => {
+                    write!(f, "{}", EscapeBody(&txt))?;
                 }
                 InlineElement::LineFeed => {
                     writeln!(f, "<br />")?;
@@ -468,23 +487,10 @@ impl<'a> ChapterBuilder<'a> {
         self
     }
 
-    pub fn add_text(&mut self, content: &'a str) -> &mut Self {
+    /// note: content will not be trimmed
+    pub fn add_text(&mut self, content: impl Into<Cow<'a, str>>) -> &mut Self {
         self.span_style_actualize();
-        if self.preserve_line_feeds {
-            let mut it = content.lines();
-            if let Some(first) = it.next() {
-                let first = first.trim();
-                self.current_p.push(InlineElement::Text(first))
-            }
-            for rem in it {
-                let rem = rem.trim();
-                self.current_p.push(InlineElement::LineFeed);
-                self.current_p.push(InlineElement::Text(rem));
-            }
-        } else {
-            let content = content.trim();
-            self.current_p.push(InlineElement::Text(content));
-        }
+        self.current_p.push(content.into().into());
         self
     }
 
@@ -527,7 +533,7 @@ mod test {
             .add_text("!");
         let chapter = builder.finish().unwrap();
         let expected = "\
-            <h1>it works</h1>\n\
+            <h2>it works</h2>\n\
             <p>hello, <b>world</b>!</p>";
         assert_eq!(format!("{chapter}"), expected);
     }
@@ -546,7 +552,7 @@ mod test {
             .add_text("paragraph 3");
         let chapter = builder.finish().unwrap();
         let expected = "\
-            <h1>multiple paragraphs</h1>\n\
+            <h2>multiple paragraphs</h2>\n\
             <p>hello, world<b>!</b></p>\n\
             <p>paragraph 2</p>\n\
             <p>paragraph 3</p>";
@@ -570,7 +576,7 @@ mod test {
             .add_text("hhh");
         let chapter = builder.finish().unwrap();
         let expected = "\
-            <h1>transitions</h1>\n\
+            <h2>transitions</h2>\n\
             <p>aaa<b><i>bbb</i>ccc</b><i>ddd</i><b>eeefff</b>ggghhh</p>";
         assert_eq!(format!("{chapter}"), expected);
     }

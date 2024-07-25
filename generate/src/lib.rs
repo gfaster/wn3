@@ -4,6 +4,7 @@ pub mod chapter;
 pub use chapter::{ChapterBuilder, Chapter};
 mod html_writer;
 mod util;
+pub mod image;
 
 pub mod epub;
 pub use epub::EpubBuilder;

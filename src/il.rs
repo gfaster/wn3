@@ -3,7 +3,7 @@ use generate::Chapter;
 use regex_lite::Regex;
 use scraper::{ElementRef, Html, Selector};
 
-use crate::common::{add_basic, is_hr, RuleSet};
+use crate::{common::{add_basic, is_hr, RuleSet}, overrides::OverrideSet};
 
 pub struct IlConfig {
     pub strip_fwd_tln: bool,
@@ -70,11 +70,11 @@ impl RuleSet for Reigokai {
         el.attr("href")
     }
 
-    fn parse_multichapter_page<'a>(&self, html: &'a Html) -> Result<Chapter<'a>> {
+    fn parse_multichapter_page<'a>(&self, _html: &'a Html) -> Result<Chapter<'a>> {
         todo!()
     }
 
-    fn parse_body<'a>(&self, html: &'a Html, ch: &mut generate::ChapterBuilder<'a>) -> Result<()> {
+    fn parse_body<'a>(&self, html: &'a Html, overrides: &OverrideSet, ch: &mut generate::ChapterBuilder<'a>) -> Result<()> {
         let filter = |el: &ElementRef| !self.simple_exclude(el);
         let mut it = html.select(&self.p_sel).filter(filter);
         let first = it.clone().find(|el| !self.simple_exclude(el)).context("no paragraphs")?;
@@ -125,7 +125,7 @@ impl RuleSet for Reigokai {
             if self.simple_exclude(&el) {
                 continue
             }
-            add_basic(ch, el)
+            add_basic(ch, el, overrides)
         }
         Ok(())
     }
