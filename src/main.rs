@@ -54,8 +54,15 @@ async fn main() -> Result<()> {
         }
     }
 
-    let mut out = std::fs::OpenOptions::new().write(true).read(false).truncate(true).create(true).open("output.epub")?;
-    book.finish(&mut out)?;
+    finish(book).context("failed writing epub")?;
+
+    Ok(())
+}
+
+fn finish(book: EpubBuilder) -> anyhow::Result<()> {
+    let mut outfile = std::fs::OpenOptions::new().write(true).read(false).truncate(true).create(true).open("output.epub").context("could not open output epub")?;
+    book.finish(&mut outfile).context("could not write to file")?;
+
     Ok(())
 }
 
@@ -69,20 +76,20 @@ async fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rule
             eprintln!("TODO: handle section {section}")
         }
         ensure!(curr.scheme() == "https" || curr.scheme() == "file", "url {curr} does not have expected scheme");
-        let (ty, val) = cx.fetch(&curr).await.context("failed fetching")?;
+        let (ty, val) = cx.fetch(curr.clone()).await.context("failed fetching")?;
         ensure!(ty == fetch::MediaType::Html, "{ty:?} is of wrong type");
         let html = std::str::from_utf8(&val).context("not valid utf-8")?;
         let html = Html::parse_document(&html);
         let html = Box::leak(Box::new(html));
         let overrides = track.with_url(&curr);
-        let (ch, next) = rules.parse_with_overrides(html, &overrides).context("failed to parse")?;
+        let (ch, next) = rules.parse_with_overrides_async(html, &overrides, Some(cx)).await.context("failed to parse")?;
         let next = if let Some(next) = next {
             Some(Url::parse(next).context("invalid url")?)
         } else {
             None
         };
         book.add_chapter(ch);
-        ensure!(prev != next, "url {prev:?} was repeated");
+        ensure!(prev.is_none() || prev != next, "url {prev:?} was repeated");
         if curr == end {
             break
         }

@@ -9,6 +9,7 @@ pub mod sed;
 #[serde(deny_unknown_fields)]
 pub struct BookDef {
     pub title: String,
+    pub subtitle: Option<String>,
     pub homepage: Url,
     pub author: Option<String>,
     pub translator: Option<String>,
@@ -20,9 +21,10 @@ pub struct BookDef {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
+// #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all_fields = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub enum UrlSelection {
     Range {
         start: Url,
@@ -72,74 +74,4 @@ impl BookDef {
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    //
-    // fn url(s: &str) -> Url {
-    //     Url::parse(s).unwrap()
-    // }
-    //
-    // #[test]
-    // fn it_works_chapters() {
-    //     let def = r#"
-    //     title = "Example"
-    //     url = "https://example.com"
-    //
-    //     [[content]]
-    //     start = "https://example.com/1"
-    //     end = "https://example.com/4"
-    //
-    //     [[content]]
-    //     url = "https://example.com/5"
-    //
-    //     [[content]]
-    //     ruleset-override = "weird"
-    //     url = "https://example.com/6"
-    //     "#;
-    //     let actual: BookDef = toml::from_str(def).map_err(|e| eprintln!("{e}")).unwrap();
-    //     let expected = BookDef {
-    //     };
-    //     expected.validate().unwrap();
-    //     actual.validate().unwrap();
-    //     assert_eq!(actual, expected)
-    // }
-    //
-    // #[test]
-    // fn it_works_sections() {
-    //     let def = r#"
-    //     title = "Example"
-    //     url = "https://example.com"
-    //
-    //     [[content]]
-    //     title-override = "prologue"
-    //     url = "https://example.com/0"
-    //
-    //     [[content]]
-    //     section-title = "section 1"
-    //
-    //     [[content]]
-    //     exclude-urls = ["https://example.com/2"]
-    //     start = "https://example.com/1"
-    //     end = "https://example.com/4"
-    //
-    //     [[content]]
-    //     section-title = "section 2"
-    //
-    //     [[content]]
-    //     url = "https://example.com/5"
-    //
-    //     [[content]]
-    //     ruleset-override = "weird"
-    //     url = "https://example.com/6"
-    //     "#;
-    //     let actual: BookDef = toml::from_str(def).map_err(|e| eprintln!("{e}")).unwrap();
-    //     let expected = BookDef {
-    //         title: "Example".into(),
-    //         homepage: "https://example.com".into(),
-    //         content: vec![
-    //         ],
-    //     };
-    //     expected.validate().unwrap();
-    //     actual.validate().unwrap();
-    //     assert_eq!(actual, expected)
-    // }
 }

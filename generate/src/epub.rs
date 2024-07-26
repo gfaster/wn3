@@ -1,4 +1,4 @@
-mod package;
+pub(crate) mod package;
 mod xml;
 mod book;
 

@@ -159,6 +159,7 @@ impl Display for EscapeBody<'_> {
                 '>' => "&gt;",
                 '<' => "&lt;",
                 '&' => "&amp;",
+                // '\u{00a0}' => "&nbsp;",
                 _ => continue,
             };
             f.write_str(&raw[last..i])?;

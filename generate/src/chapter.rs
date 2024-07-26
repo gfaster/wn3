@@ -1,5 +1,8 @@
-use crate::{html_writer::*, image::Image};
-use std::{borrow::Cow, fmt::Display};
+use ahash::{HashMap, HashMapExt};
+use anyhow::{ensure, Context};
+
+use crate::{html_writer::*, image::{Image, ImageId, ResolvedImage}};
+use std::{borrow::Cow, fmt::Display, rc::Rc, sync::Arc};
 
 // struct ImageDesc<'a> {
 //     pub path: Box<str>,
@@ -34,7 +37,7 @@ impl SpanStyleEl {
         match self {
             SpanStyleEl::Bold => "</b>",
             SpanStyleEl::Italic => "</i>",
-            SpanStyleEl::Footnote => r#"</aside>"#,
+            SpanStyleEl::Footnote => "</aside>",
         }
     }
 }
@@ -167,20 +170,15 @@ pub enum ParagraphMode {
 }
 
 #[derive(Debug)]
-pub struct Paragraph<'a> {
-    style: ParagraphStyle,
-    elms: Vec<InlineElement<'a>>,
-}
-
-
-#[derive(Debug)]
-pub enum MajorElement<'a> {
+enum MajorElement<'a> {
     Paragraph {
         style: ParagraphStyle,
         elms: Vec<InlineElement<'a>>,
     },
-    Image(Box<Image>),
-    SectionSep,
+    Image(ImageId),
+    ImageResolved(Rc<ResolvedImage>),
+    SceneSep(Box<str>),
+    HorizLine,
 }
 
 impl Display for MajorElement<'_> {
@@ -203,31 +201,22 @@ impl Display for MajorElement<'_> {
                 let disp = TagSurround::new(tag, elms.disp_join(""));
                 disp.fmt(f)
             },
+            (MajorElement::ImageResolved(i), _) => i.fmt(f),
+            (MajorElement::HorizLine, true) => "---".fmt(f),
+            (MajorElement::HorizLine, false) => "<hr />".fmt(f),
+            (MajorElement::SceneSep(s), true) => {
+                if s.is_empty() {
+                    writeln!(f, "### ◇◇")
+                } else {
+                    writeln!(f, "### ◇ {s} ◇", s = EscapeMd(s))
+                }
+            },
+            (MajorElement::SceneSep(s), false) => {
+                let s = EscapeBody(s);
+                format_args!("◇ {s} ◇").surround(r#"<h3 class="scene-sep">"#, "</h3>").fmt(f)
+            },
             (MajorElement::Image(_), true) => todo!(),
             (MajorElement::Image(_), false) => todo!(),
-            (MajorElement::SectionSep, true) => "---".fmt(f),
-            (MajorElement::SectionSep, false) => "<hr />".fmt(f),
-        }
-    }
-}
-
-impl Display for Paragraph<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if f.alternate() {
-            let prefix = match self.style.mode {
-                ParagraphMode::Normal => "",
-                ParagraphMode::BlockQuote => "> ",
-            };
-            f.write_str(prefix)?;
-            let disp = self.elms.disp_join("");
-            disp.fmt(f)
-        } else {
-            let tag = match self.style.mode {
-                ParagraphMode::Normal => "p",
-                ParagraphMode::BlockQuote => "blockquote",
-            };
-            let disp = TagSurround::new(tag, self.elms.disp_join(""));
-            disp.fmt(f)
         }
     }
 }
@@ -320,6 +309,7 @@ impl Display for InlineElement<'_> {
 pub struct Chapter<'a> {
     id: u32,
     title: Box<str>,
+    pub(crate) rsc: Vec<Rc<ResolvedImage>>,
     p: Vec<MajorElement<'a>>,
 }
 
@@ -372,6 +362,8 @@ pub struct ChapterBuilder<'a> {
     pub span_style: SpanStyle,
     span_style_actual: SpanStyle,
     pub preserve_line_feeds: bool,
+    pub(crate) resources_unresolved: HashMap<Arc<str>, Image>,
+    pub(crate) resources_resolved: HashMap<ImageId, Rc<ResolvedImage>>,
 
     current_p: Vec<InlineElement<'a>>,
 
@@ -384,11 +376,12 @@ pub struct ChapterBuilder<'a> {
 pub struct ChapterBuilderError {
     empty: bool,
     missing_title: bool,
+    unresolved_resources: bool,
 }
 
 impl ChapterBuilderError {
     fn any(&self) -> bool {
-        self.missing_title | self.empty
+        self.missing_title | self.empty | self.unresolved_resources
     }
 }
 
@@ -404,6 +397,9 @@ impl std::fmt::Display for ChapterBuilderError {
         }
         if self.missing_title {
             writeln!(f, "\tMissing title")?;
+        }
+        if self.unresolved_resources {
+            writeln!(f, "\tUnresolved resources")?;
         }
         Ok(())
     }
@@ -424,6 +420,8 @@ impl<'a> ChapterBuilder<'a> {
             current_p: Default::default(),
             complete_p: Default::default(),
             preserve_line_feeds: false,
+            resources_unresolved: HashMap::new(),
+            resources_resolved: HashMap::new(),
         }
     }
 
@@ -483,8 +481,74 @@ impl<'a> ChapterBuilder<'a> {
     /// adds a horizontal separator (`<hr>`). Implicitly completes the paragraph
     pub fn add_separator(&mut self) -> &mut Self {
         self.paragraph_finish();
-        self.complete_p.push(MajorElement::SectionSep);
+        self.complete_p.push(MajorElement::HorizLine);
         self
+    }
+
+    /// adds a scene separator with optional heading. Implicitly completes the paragraph
+    pub fn add_scene_sep(&mut self, scene: impl Into<Box<str>>) -> &mut Self {
+        self.paragraph_finish();
+        self.complete_p.push(MajorElement::SceneSep(scene.into()));
+        self
+    }
+
+    /// adds an image, inline with page flow. Implicitly completes the paragraph
+    pub fn add_image(&mut self, img: impl Into<Image>) -> &mut Self {
+        self.paragraph_finish();
+        let img: Image = img.into();
+        self.complete_p.push(MajorElement::Image(img.id()));
+        self.resources_unresolved.insert(Arc::clone(img.url()), img);
+        self
+    }
+
+    /// whether chapter has image resources that would need to be resolved using
+    /// [`Self::resolve_resources`]
+    pub fn requires_resolution(&self) -> bool {
+        !self.resources_unresolved.is_empty()
+    }
+
+    /// make sure we have all the images loaded
+    pub async fn resolve_resources(&mut self, store: &fetch::FetchContext) -> anyhow::Result<()> {
+        // PERF: we don't deduplicate here, but probably should?
+        self.resources_resolved.reserve(self.resources_unresolved.len());
+        for (url, img) in std::mem::take(&mut self.resources_unresolved) {
+            if self.resources_resolved.contains_key(&img.id()) {
+                continue;
+            }
+            let (ty, bytes) = store.fetch(&*url).await.context("failed fetching resource")?;
+            ensure!(ty.is_image(), "resolved type {ty:?} is not an image");
+            let img = img.resolve_with(ty, bytes);
+            self.resources_resolved.insert(img.id(), Rc::new(img));
+        }
+        // TODO: don't merge same url -> multiple alts
+        for el in &mut self.complete_p {
+            let MajorElement::Image(id) = el else { continue };
+            *el = MajorElement::ImageResolved(
+            self.resources_resolved.get(id).context("image was added without registration")?.clone());
+        }
+        Ok(())
+    }
+
+    /// make sure we have all the images loaded - won't touch network
+    pub fn resolve_resources_local(&mut self, store: &fetch::FetchContext) -> anyhow::Result<()> {
+        // PERF: we don't deduplicate here, but probably should?
+        self.resources_resolved.reserve(self.resources_unresolved.len());
+        for (url, img) in std::mem::take(&mut self.resources_unresolved) {
+            if self.resources_resolved.contains_key(&img.id()) {
+                continue;
+            }
+            let (ty, bytes) = store.fetch_local(&*url).context("failed fetching resource")?;
+            ensure!(ty.is_image(), "resolved type {ty:?} is not an image");
+            let img = img.resolve_with(ty, bytes);
+            self.resources_resolved.insert(img.id(), Rc::new(img));
+        }
+        // TODO: don't merge same url -> multiple alts
+        for el in &mut self.complete_p {
+            let MajorElement::Image(id) = el else { continue };
+            *el = MajorElement::ImageResolved(
+            self.resources_resolved.get(id).context("image was added without registration")?.clone());
+        }
+        Ok(())
     }
 
     /// note: content will not be trimmed
@@ -507,6 +571,7 @@ impl<'a> ChapterBuilder<'a> {
         let error = ChapterBuilderError {
             missing_title: self.title.is_none(),
             empty: self.complete_p.is_empty(),
+            unresolved_resources: !self.resources_unresolved.is_empty(),
         };
         if error.any() {
             return Err(error);
@@ -515,6 +580,7 @@ impl<'a> ChapterBuilder<'a> {
             id: self.id,
             p: self.complete_p,
             title: self.title.unwrap(),
+            rsc: self.resources_resolved.into_values().collect(),
         })
     }
 }

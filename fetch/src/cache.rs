@@ -23,6 +23,16 @@ impl MediaType {
         Self::try_new(id).expect("valid id")
     }
 
+    pub fn is_image(self) -> bool {
+        matches!(self,
+            MediaType::Png
+            | MediaType::Jpg
+            | MediaType::Svg
+            | MediaType::Gif
+            | MediaType::Webp
+        )
+    }
+
     pub fn try_new(id: i32) -> Option<Self> {
         let ret = match id {
             0 => Self::Xhtml,
@@ -71,6 +81,19 @@ impl MediaType {
         }
     }
 
+    pub fn extension(self) -> &'static str {
+        match self {
+            MediaType::Xhtml => "xhtml",
+            MediaType::Xml => "xml",
+            MediaType::Png => "png",
+            MediaType::Jpg => "jpg",
+            MediaType::Svg => "svg",
+            MediaType::Css => "css",
+            MediaType::Gif => "gif",
+            MediaType::Webp => "webp",
+            MediaType::Html => "html",
+        }
+    }
 }
 
 

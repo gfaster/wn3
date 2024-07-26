@@ -1,36 +1,43 @@
-use std::time::Duration;
+use std::{sync::{Arc, Mutex}, time::Duration};
 
 use bytes::Bytes;
 use ratelimit::wait_your_turn;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 mod cache;
 use cache::ObjectCache;
 pub use cache::MediaType;
-use reqwest::Url;
+use reqwest::IntoUrl;
 
 mod ratelimit;
 
+// TODO: make this not async?
+#[derive(Clone)]
 pub struct FetchContext {
-    cache: cache::ObjectCache,
+    cache: Arc<Mutex<cache::ObjectCache>>,
     client: reqwest::Client,
 }
 
 impl FetchContext {
     pub fn new(conn: rusqlite::Connection, client: reqwest::Client) -> rusqlite::Result<Self> {
         Ok(FetchContext { 
-            cache: ObjectCache::new(conn)?,
+            cache: Arc::new(Mutex::new(ObjectCache::new(conn)?)),
             client
         })
     }
 
     /// gets url from store, but will not touch network
-    pub fn fetch_local(&self, _url: &str) -> Result<(MediaType, Bytes)> {
-        todo!()
+    pub fn fetch_local(&self, url: &str) -> Result<(MediaType, Bytes)> {
+        if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url).context("db access failed")? {
+            // eprintln!("{url:?} found in cache");
+            return Ok(bytes)
+        }
+        bail!("{url} not found in cache")
     }
 
-    pub async fn fetch(&self, url: &Url) -> Result<(MediaType, Bytes)> {
-        if let Some(bytes) = self.cache.get_bytes(url.as_str()).unwrap() {
+    pub async fn fetch(&self, url: impl IntoUrl) -> Result<(MediaType, Bytes)> {
+        let url = url.into_url().context("improper url")?;
+        if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
             // eprintln!("{url:?} found in cache");
             return Ok(bytes)
         }
@@ -44,7 +51,7 @@ impl FetchContext {
         eprintln!("fetching url {url}");
 
         // check cache again in case this was stored earlier
-        if let Some(bytes) = self.cache.get_bytes(url.as_str()).unwrap() {
+        if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
             eprintln!("{url:?} found in cache after waiting");
             return Ok(bytes)
         }
@@ -71,9 +78,9 @@ impl FetchContext {
         };
         let resp_ty = MediaType::from_str(resp_ty.split_once(';').map_or(resp_ty, |(x, _rem)| x));
         let bytes = resp.bytes().await?;
-        self.cache.set(url.as_str(), &*bytes, resp_ty)?;
+        self.cache.lock().unwrap().set(url.as_str(), &*bytes, resp_ty)?;
 
-        eprintln!("completed request to {domain:?}");
+        eprint!("completed request to {domain:?}                       \r");
 
         Ok((resp_ty, bytes))
     }

@@ -3,7 +3,9 @@
 use std::borrow::Cow;
 
 use ego_tree::NodeRef;
-use generate::{chapter::SpanStyle, Chapter, ChapterBuilder};
+use fetch::FetchContext;
+use generate::{chapter::SpanStyle, image::Image, Chapter, ChapterBuilder};
+use log::warn;
 use regex_lite::Regex;
 use scraper::{node::Element, ElementRef, Html, Node};
 use anyhow::{Context, Result};
@@ -26,15 +28,15 @@ pub struct Rules {
 impl Rules {
     pub fn new_il() -> Self {
         Rules {
-            inner: Box::new(crate::il::Reigokai::new())
+            inner: Box::new(crate::il::Reigokai::new()),
         }
     }
 
     pub fn parse<'a>(&self, html: &'a Html) -> Result<(Chapter<'a>, Option<&'a str>)> {
-        self.parse_with_overrides(html, &OverrideSet::empty())
+        self.parse_with_overrides(html, &OverrideSet::empty(), None)
     }
 
-    pub fn parse_with_overrides<'a>(&self, html: &'a Html, overrides: &OverrideSet) -> Result<(Chapter<'a>, Option<&'a str>)> {
+    pub fn parse_with_overrides<'a>(&self, html: &'a Html, overrides: &OverrideSet, store: Option<&FetchContext>) -> Result<(Chapter<'a>, Option<&'a str>)> {
         let mut ch = ChapterBuilder::new();
         let title = if let Some(title) = &overrides.title {
             title.to_owned()
@@ -45,11 +47,34 @@ impl Rules {
         self.inner.parse_body(html, overrides, &mut ch).with_context(|| format!("invalid chapter: {title}"))?;
 
         let next = self.inner.next_chapter(&html);
+        if ch.requires_resolution() {
+            let store = store.context("chapter has images but no fetch context was provided")?;
+            ch.resolve_resources_local(store).context("failed to resolve resources")?;
+        }
         let ch = ch.finish().with_context(|| format!("invalid chapter: {title}"))?;
-        println!("{ch:#}\n");
+        // println!("{ch:#}\n");
         Ok((ch, next))
     }
 
+    pub async fn parse_with_overrides_async<'a>(&self, html: &'a Html, overrides: &OverrideSet<'_>, store: Option<&FetchContext>) -> Result<(Chapter<'a>, Option<&'a str>)> {
+        let mut ch = ChapterBuilder::new();
+        let title = if let Some(title) = &overrides.title {
+            title.to_owned()
+        } else {
+            self.inner.title(&html)
+        };
+        ch.title_set(title.clone());
+        self.inner.parse_body(html, overrides, &mut ch).with_context(|| format!("invalid chapter: {title}"))?;
+
+        let next = self.inner.next_chapter(&html);
+        if ch.requires_resolution() {
+            let store = store.context("chapter has images but no fetch context was provided")?;
+            ch.resolve_resources(store).await.context("failed to resolve resources")?;
+        }
+        let ch = ch.finish().with_context(|| format!("invalid chapter: {title}"))?;
+        // println!("{ch:#}\n");
+        Ok((ch, next))
+    }
 }
 
 /// basic processing of "normal" blocks
@@ -80,6 +105,16 @@ fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>, overrides: &O
                 },
                 "br" => {
                     ch.add_text("\n");
+                }
+                "img" => {
+                    let Some(src) = e.attr("src") else {
+                        warn!(target: "parsing", "image {e:?} has no src");
+                        return
+                    };
+                    let alt = e.attr("alt").map(|alt| alt.to_owned());
+                    let mut img = Image::new(src);
+                    img.alt = alt;
+                    ch.add_image(img);
                 }
                 "script" => (),
                 _ => {

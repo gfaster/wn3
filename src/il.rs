@@ -12,7 +12,7 @@ pub struct IlConfig {
 impl Default for IlConfig {
     fn default() -> Self {
         IlConfig { 
-            strip_fwd_tln: true
+            strip_fwd_tln: false
         }
     }
 }
@@ -20,6 +20,7 @@ impl Default for IlConfig {
 pub struct Reigokai {
     next_sel: Selector,
     basic_exclude_sel: Selector,
+    scene_sep_reg: Regex,
     title_sel: Selector,
     title_reg: Regex,
     p_sel: Selector,
@@ -31,6 +32,7 @@ impl Reigokai {
         Self {
             next_sel: Selector::parse("#main p a:last-of-type").unwrap(),
             basic_exclude_sel: Selector::parse(".sharedaddy,p a,script").unwrap(),
+            scene_sep_reg: Regex::new(r#"^◇([^◇]*)◇?\s*$"#).unwrap(),
             title_sel: Selector::parse("head > title").unwrap(),
             title_reg: Regex::new("\\w* \u{2013} (.*) \\| Reigokai: Isekai TL").unwrap(),
             p_sel: Selector::parse("body *.entry-content p,hr").unwrap(),
@@ -125,7 +127,12 @@ impl RuleSet for Reigokai {
             if self.simple_exclude(&el) {
                 continue
             }
-            add_basic(ch, el, overrides)
+            if let Some(sep) = el.text().next().and_then(|txt| self.scene_sep_reg.captures(txt)) {
+                let scene = sep.get(1).map_or("", |m| m.as_str().trim());
+                ch.add_scene_sep(scene);
+            } else {
+                add_basic(ch, el, overrides)
+            }
         }
         Ok(())
     }

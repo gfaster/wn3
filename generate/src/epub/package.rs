@@ -2,8 +2,10 @@
 //!
 //! <https://www.w3.org/TR/epub/#sec-package-doc>
 
-use std::{collections::HashMap, rc::Rc, time::SystemTime};
+use std::{rc::Rc, time::SystemTime};
+use ahash::HashMap;
 
+use fetch::MediaType;
 use time::{format_description, OffsetDateTime};
 
 use crate::util::{OptSetting, Setting};
@@ -11,6 +13,7 @@ use crate::util::{OptSetting, Setting};
 pub struct OpfBuilder {
     pub language: Setting,
     pub title: Setting,
+    pub subtitle: OptSetting,
     pub publisher: OptSetting,
     pub date: SystemTime,
 
@@ -24,7 +27,9 @@ pub struct OpfBuilder {
     /// contributers (creators) with their MARC relator role
     pub contributers: Vec<(ContributorRole, Box<str>)>,
 
-    /// every item in reading order
+    /// every item in reading order.
+    ///
+    /// The spine is built from this by stripping out every non-xhtml manifest item
     pub manifest: Vec<ManifestItem>,
 }
 
@@ -49,6 +54,7 @@ impl OpfError {
 pub struct OpfSpec {
     language: Setting,
     title: Setting,
+    subtitle: OptSetting,
     publisher: OptSetting,
     date: SystemTime,
 
@@ -66,6 +72,7 @@ impl OpfBuilder {
         Self {
             language: Setting::dft("en"),
             title: Setting::dft("Ebook"),
+            subtitle: OptSetting::new(),
             publisher: OptSetting::new(),
             date: SystemTime::UNIX_EPOCH,
             manifest: Vec::new(),
@@ -83,6 +90,7 @@ impl OpfBuilder {
         let OpfBuilder {
             language,
             title,
+            subtitle,
             publisher,
             date,
             manifest,
@@ -102,7 +110,7 @@ impl OpfBuilder {
             let id = Rc::from(m.id());
             ((Rc::clone(&id), m), id)
         }).collect();
-        spine.retain(|i| manifest[i].media_type == "application/xhtml+xml");
+        spine.retain(|i| manifest[i].media_type == MediaType::Xhtml);
         if !manifest.contains_key("nav") {
             e.no_nav = true;
         }
@@ -127,6 +135,7 @@ impl OpfBuilder {
         Ok(OpfSpec {
             language,
             title,
+            subtitle,
             publisher,
             contributers,
             date,
@@ -160,12 +169,16 @@ impl OpfSpec {
         {
             let mut metadata = pkg.mkel("metadata", [("xmlns:dc", "http://purl.org/dc/elements/1.1/")])?;
 
-            metadata.mkel("dc:title", [])?.write_field(self.title())?;
+            metadata.mkel("dc:title", [("id", "title_main")])?.write_field(self.title())?;
+            metadata.mkel("meta", [("refines", "#title_main"), ("property", "title-type")])?.write_field("main")?;
+            if let Some(subtitle) = self.subtitle.get() {
+                metadata.mkel("dc:title", [("id", "title_sub")])?.write_field(subtitle)?;
+                metadata.mkel("meta", [("refines", "#title_sub"), ("property", "title-type")])?.write_field("subtitle")?;
+            }
 
             for (i, &(_ty, ref id)) in self.identifiers.iter().enumerate() {
                 metadata.mkel("dc:identifier", [("id", &*format!("identifier_{i}"))])?.write_field(id)?;
             }
-            // TODO: make dc:date not fake
             metadata.mkel("dc:date", [])?.write_field(datetime.date())?;
             let datestr = datetime.format(
                 &format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]Z")
@@ -174,6 +187,7 @@ impl OpfSpec {
             for (i, &(role, ref creator)) in self.contributers.iter().enumerate() {
                 let id =    format!("creator{i:03}");
                 let selid = format!("#{id}");
+                // FIXME: dc:creator is primary, dc:contributer is secondary
                 metadata.mkel("dc:creator", [("id", &*id)])?.write_field(&**creator)?;
                 metadata.mkel("meta", [
                     ("refines", &*selid),
@@ -191,14 +205,14 @@ impl OpfSpec {
             manifest.mkel_selfclosed("item", [
                 ("id", "nav"),
                 ("href", &*self.manifest_nav.href),
-                ("media-type", self.manifest_nav.media_type),
+                ("media-type", self.manifest_nav.media_type.mime()),
                 ("properties", "nav"),
             ])?;
             if let Some(cover) = &self.manifest_cover {
                 manifest.mkel_selfclosed("item", [
                     ("id", cover.id()),
                     ("href", &*cover.href),
-                    ("media-type", cover.media_type),
+                    ("media-type", cover.media_type.mime()),
                     ("properties", "cover-image"),
                 ])?;
             }
@@ -206,7 +220,7 @@ impl OpfSpec {
                 manifest.mkel_selfclosed("item", [
                     ("id", &**id),
                     ("href", &*item.href),
-                    ("media-type", item.media_type)
+                    ("media-type", item.media_type.mime())
                 ])?;
             }
         }
@@ -236,7 +250,7 @@ impl OpfSpec {
 /// - "nav"
 pub struct ManifestItem {
     href: Box<str>,
-    media_type: &'static str
+    media_type: MediaType
 }
 
 impl ManifestItem {
@@ -249,15 +263,23 @@ impl ManifestItem {
         Self::try_new(href).expect("invalid href")
     }
 
+    /// don't infer media type
+    pub fn new_explicit(href: impl Into<Box<str>>, ty: MediaType) -> Self {
+        Self {
+            href: href.into(),
+            media_type: ty,
+        }
+    }
+
     pub fn try_new(href: impl Into<Box<str>>) -> Option<Self> {
         let href = href.into();
         let (stem, ext) = href.rsplit_once('.')?;
         let media_type = match ext {
-            "xhtml" => "application/xhtml+xml",
-            "png" => "image/png",
-            "jpeg" | "jpg" => "image/jpeg",
-            "svg" => "image/svg+xml",
-            "css" => "text/css",
+            "xhtml" => MediaType::Xhtml,
+            "png" => MediaType::Png,
+            "jpeg" | "jpg" => MediaType::Jpg,
+            "svg" => MediaType::Svg,
+            "css" => MediaType::Css,
             _ => return None
         };
         let id = stem.rsplit_once('/').map_or(stem, |(_, id)| id);

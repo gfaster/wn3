@@ -9,10 +9,6 @@ edition = "2021"
 name = "wn3"
 path = "src/main.rs"
 
-# [[bin]]
-# name = "minimize"
-# required-features = ["minimizer"]
-
 [dependencies]
 scraper = "0.19.1"
 fetch = {path = "./fetch"}
@@ -29,8 +25,13 @@ clap = { version = "4.5.9", features = ["derive"] }
 ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
 ahash = "0.8.11"
 url = { version = "2.5.2", features = ["serde"] }
+log = "0.4.22"
 
 [patch.crates-io]
 ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
+
+[profile.release]
+strip = true
+# debug = true
 
 [features]

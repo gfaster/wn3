@@ -61,38 +61,6 @@ impl<W: Write> XmlSink<W> {
     }
 }
 
-// macro_rules! xml_tag {
-//     ($parent:expr, 
-//     <$tag_pfx:ident$(:$tag_sfx:ident)? 
-//         $($attr_pfx:ident$(:$attr_sfx:ident)?=$val:literal)*>
-// ) => {
-//     {
-//     let name = stringify!($tag_pfx$(:$tag_sfx)?);
-//         $parent.mkel(name, [
-//     $({
-//     let attr = stringify!($attr_pfx$(:$attr_sfx)?);
-//             (attr, $val)
-//     }),*
-//         ])
-//     }
-//     };
-//     ($parent:expr, 
-//     <$tag_pfx:ident$(:$tag_sfx:ident)? 
-//         $($attr_pfx:ident$(:$attr_sfx:ident)?=$val:literal)* />
-// ) => {
-//     {
-//     let name = stringify!($tag_pfx:ident$(:$tag_sfx)?);
-//         $parent.mkel_selfclosed(name, [
-//     $({
-//     let attr = stringify!($attr_pfx$(:$attr_sfx)?);
-//             (attr, $val)
-//     }),*
-//         ])
-//     }
-//     };
-// }
-// pub(crate) use xml_tag;
-
 pub struct Element<'a, W> {
     sink: &'a mut XmlSink<W>,
     name: &'static str,

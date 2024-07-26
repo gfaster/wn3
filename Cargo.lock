@@ -488,6 +488,9 @@ name = "generate"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "anyhow",
+ "bytes",
+ "fetch",
  "time",
  "zip",
 ]
@@ -2146,6 +2149,7 @@ dependencies = [
  "ego-tree",
  "fetch",
  "generate",
+ "log",
  "markup5ever",
  "regex-lite",
  "reqwest",

@@ -1,8 +1,10 @@
 use std::{fmt::Display, sync::Arc};
 
 use ahash::RandomState;
+use bytes::Bytes;
+use fetch::MediaType;
 
-use crate::html_writer::{EscapeAttr, EscapeMd};
+use crate::{epub::package::ManifestItem, html_writer::{EscapeAttr, EscapeMd}};
 
 
 #[cfg(debug_assertions)]
@@ -28,36 +30,56 @@ pub fn url_id(url: &str) -> u64 {
     ret
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ImageId(u64);
+impl Display for ImageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "image_{id:016x}", id = self.0)
+    }
+}
+
 #[derive(Debug)]
 pub struct Image {
-    /// this will need to be acquired from the Store in such a way that we don't duplicate images
-    id: u64,
     url: Arc<str>,
     pub alt: Option<String>,
 }
 
 impl Image {
     pub fn new(url: impl Into<Arc<str>>) -> Self {
-        let url = url.into();
-        Image { id: url_id(&url), url, alt: None }
+        Image {
+            url: url.into(),
+            alt: None,
+        }
     }
-    
+
+    pub fn id(&self) -> ImageId {
+        ImageId(url_id(&self.url))
+    }
+
+    pub(crate) fn resolve_with(self, ty: MediaType, data: Bytes) -> ResolvedImage {
+        ResolvedImage { 
+            id: self.id(),
+            alt: self.alt,
+            media_type: ty,
+            data
+        }
+    }
+
     pub fn url(&self) -> &Arc<str> {
         &self.url
     }
 
-    fn src(&self) -> impl Display {
-        struct D(u64);
-        impl Display for D {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "assets/image_{id:016x}", id = self.0)
-            }
-        }
-        D(self.id)
-    }
 }
 
-impl Display for Image {
+#[derive(Debug)]
+pub struct ResolvedImage {
+    id: ImageId,
+    pub alt: Option<String>,
+    pub(crate) media_type: MediaType,
+    pub(crate) data: Bytes,
+}
+
+impl Display for ResolvedImage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let alt = self.alt.as_deref().unwrap_or("an image without alt text");
         let src = self.src();
@@ -71,18 +93,38 @@ impl Display for Image {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn src_fmt() {
-        let img = Image {
-            id: 0x00,
-            ..Image::new("https://example.com")
-        };
-        println!("{}", img.src());
-        panic!()
+impl ResolvedImage {
+    pub fn manifest_item(&self) -> ManifestItem {
+        ManifestItem::new_explicit(self.src().to_string(), self.media_type)
     }
 
+    pub(crate) fn id(&self) -> ImageId {
+        self.id
+    }
+
+    pub(crate) fn src(&self) -> impl Display {
+        struct D(ImageId, MediaType);
+        impl Display for D {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "assets/{id}.{ext}", id = self.0, ext = self.1.extension())
+            }
+        }
+        let ty = self.media_type;
+        D(self.id, ty)
+    }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     #[test]
+//     fn src_fmt() {
+//         let img = Image {
+//             ..Image::new("https://example.com")
+//         };
+//         println!("{}", img.src());
+//         panic!()
+//     }
+//
+// }

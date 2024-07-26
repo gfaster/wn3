@@ -1,22 +1,25 @@
-use std::io::{self, prelude::*};
+use std::{io::{self, prelude::*}, rc::Rc};
+use ahash::{HashMap, HashMapExt};
 use zip::{write::SimpleFileOptions, ZipWriter};
 
-use crate::{chapter::Chapter, epub::{package::ManifestItem, xml::XmlSink}, html_writer::EscapeBody};
+use crate::{chapter::Chapter, epub::{package::ManifestItem, xml::XmlSink}, html_writer::EscapeBody, image::{ImageId, ResolvedImage}};
 
 use super::package::{ContributorRole, IdentifierType, OpfBuilder};
 
 pub struct EpubBuilder<'a> {
     opf: OpfBuilder,
     chapters: Vec<Chapter<'a>>,
+    additional_resources: HashMap<ImageId, Rc<ResolvedImage>>,
     chunk_size: usize,
 }
 
 impl<'a> EpubBuilder<'a> {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             opf: OpfBuilder::new(),
             chapters: Vec::new(),
             chunk_size: 0,
+            additional_resources: HashMap::new(),
         }
     }
 
@@ -30,6 +33,7 @@ impl<'a> EpubBuilder<'a> {
     }
 
     pub fn add_chapter(&mut self, chapter: Chapter<'a>) -> &mut Self {
+        self.additional_resources.extend(chapter.rsc.iter().map(|r| (r.id(), Rc::clone(r))));
         self.chapters.push(chapter);
         self
     }
@@ -88,6 +92,9 @@ impl<'a> EpubBuilder<'a> {
         zip.add_directory("EPUB", stored.clone())?;
         zip.add_directory("EPUB/css", stored.clone())?;
         zip.add_directory("META-INF", stored.clone())?;
+        if !self.additional_resources.is_empty() {
+            zip.add_directory("EPUB/assets", stored.clone())?;
+        }
         zip.start_file("META-INF/container.xml", stored.clone())?;
         zip.write_all(CONTAINER_XML.as_bytes())?;
 
@@ -113,6 +120,12 @@ impl<'a> EpubBuilder<'a> {
             zip.start_file(format!("EPUB/chunk_{i}.xhtml"), compressed.clone())?;
             write_chunk(&mut zip, chunk)?;
             self.opf.manifest.push(ManifestItem::new(format!("chunk_{i}.xhtml")));
+        }
+
+        for (_id, rsc) in self.additional_resources {
+            zip.start_file(format!("EPUB/{}", rsc.src()), compressed.clone())?;
+            self.opf.manifest.push(ManifestItem::new_explicit(rsc.src().to_string(), rsc.media_type));
+            zip.write_all(&rsc.data)?;
         }
 
 
