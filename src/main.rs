@@ -9,8 +9,7 @@ use generate::EpubBuilder;
 use scraper::Html;
 
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let f = std::fs::read_to_string("cfg.toml").context("failed to open config")?;
     let def: BookDef = toml::from_str(&f).context("failed to parse config")?;
     def.validate().context("failed to validate def")?;
@@ -18,10 +17,7 @@ async fn main() -> Result<()> {
     let rules = Rules::new_il();
     let mut book = generate::EpubBuilder::new();
     let conn = rusqlite::Connection::open("cache.db")?;
-    let client = reqwest::ClientBuilder::new()
-        .user_agent("wn-scraper3/0.0.1 (github.com/gfaster)")
-        .build()
-        .unwrap();
+    let client = ureq::AgentBuilder::new().https_only(true).user_agent("wn-scraper3/0.0.1 (github.com/gfaster)").build();
     let cx = FetchContext::new(conn, client).unwrap();
     book.set_title(def.title);
     book.add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
@@ -37,20 +33,20 @@ async fn main() -> Result<()> {
     for entry in def.content {
         match entry {
             def::UrlSelection::Range { start, end } => {
-                if let Err(e) = fetch_range(&cx, &mut book, &rules, start, end, &sections, &mut overrides).await.context("fetching urls") {
+                if let Err(e) = fetch_range(&cx, &mut book, &rules, start, end, &sections, &mut overrides).context("fetching urls") {
                     eprintln!("{e:?}");
                     has_failed = true;
                 }
             },
             def::UrlSelection::Url(url) => {
-                if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).await.context("fetching url") {
+                if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).context("fetching url") {
                     eprintln!("{e:?}");
                     has_failed = true;
                 }
             },
             def::UrlSelection::List(list) => {
                 for url in list {
-                    if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).await.context("fetching url") {
+                    if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).context("fetching url") {
                         eprintln!("{e:?}");
                         has_failed = true;
                     }
@@ -81,7 +77,7 @@ fn finish(book: EpubBuilder) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rules, start: Url, end: Url, sections: &HashMap<Url, String>, track: &mut OverrideTracker) -> anyhow::Result<()> {
+fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rules, start: Url, end: Url, sections: &HashMap<Url, String>, track: &mut OverrideTracker) -> anyhow::Result<()> {
     ensure!(start.scheme() == end.scheme(), "start and end must be on the same scheme");
     ensure!(start.host_str() == end.host_str(), "start and end must be on the same host");
     let mut prev = None;
@@ -91,13 +87,13 @@ async fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rule
             eprintln!("TODO: handle section {section}")
         }
         ensure!(curr.scheme() == "https" || curr.scheme() == "file", "url {curr} does not have expected scheme");
-        let (ty, val) = cx.fetch(curr.clone()).await.context("failed fetching")?;
+        let (ty, val) = cx.fetch(&curr).context("failed fetching")?;
         ensure!(ty == fetch::MediaType::Html, "{ty:?} is of wrong type");
         let html = std::str::from_utf8(&val).context("not valid utf-8")?;
         let html = Html::parse_document(&html);
         let html = Box::leak(Box::new(html));
         let overrides = track.with_url(&curr);
-        let (ch, next) = rules.parse_with_overrides_async(html, &overrides, Some(cx)).await.context("failed to parse")?;
+        let (ch, next) = rules.parse_with_overrides(html, &overrides, Some(cx)).context("failed to build chapter")?;
         let next = if let Some(next) = next {
             Some(Url::parse(next).context("invalid url")?)
         } else {

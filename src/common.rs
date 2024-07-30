@@ -36,7 +36,7 @@ impl Rules {
         self.parse_with_overrides(html, &OverrideSet::empty(), None)
     }
 
-    pub fn parse_with_overrides<'a>(&self, html: &'a Html, overrides: &OverrideSet, store: Option<&FetchContext>) -> Result<(Chapter<'a>, Option<&'a str>)> {
+    pub fn parse_with_overrides<'a>(&self, html: &'a Html, overrides: &OverrideSet<'_>, store: Option<&FetchContext>) -> Result<(Chapter<'a>, Option<&'a str>)> {
         let mut ch = ChapterBuilder::new();
         let title = if let Some(title) = &overrides.title {
             title.to_owned()
@@ -49,27 +49,7 @@ impl Rules {
         let next = self.inner.next_chapter(&html);
         if ch.requires_resolution() {
             let store = store.context("chapter has images but no fetch context was provided")?;
-            ch.resolve_resources_local(store).context("failed to resolve resources")?;
-        }
-        let ch = ch.finish().with_context(|| format!("invalid chapter: {title}"))?;
-        // println!("{ch:#}\n");
-        Ok((ch, next))
-    }
-
-    pub async fn parse_with_overrides_async<'a>(&self, html: &'a Html, overrides: &OverrideSet<'_>, store: Option<&FetchContext>) -> Result<(Chapter<'a>, Option<&'a str>)> {
-        let mut ch = ChapterBuilder::new();
-        let title = if let Some(title) = &overrides.title {
-            title.to_owned()
-        } else {
-            self.inner.title(&html)
-        };
-        ch.title_set(title.clone());
-        self.inner.parse_body(html, overrides, &mut ch).with_context(|| format!("invalid chapter: {title}"))?;
-
-        let next = self.inner.next_chapter(&html);
-        if ch.requires_resolution() {
-            let store = store.context("chapter has images but no fetch context was provided")?;
-            ch.resolve_resources(store).await.context("failed to resolve resources")?;
+            ch.resolve_resources(store).context("failed to resolve resources")?;
         }
         let ch = ch.finish().with_context(|| format!("invalid chapter: {title}"))?;
         // println!("{ch:#}\n");

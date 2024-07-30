@@ -1,8 +1,9 @@
 use ahash::{HashMap, HashMapExt};
 use anyhow::{ensure, Context};
+use url::Url;
 
 use crate::{html_writer::*, image::{Image, ImageId, ResolvedImage}};
-use std::{borrow::Cow, fmt::Display, rc::Rc, sync::Arc};
+use std::{borrow::Cow, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
 
 // struct ImageDesc<'a> {
 //     pub path: Box<str>,
@@ -508,14 +509,15 @@ impl<'a> ChapterBuilder<'a> {
     }
 
     /// make sure we have all the images loaded
-    pub async fn resolve_resources(&mut self, store: &fetch::FetchContext) -> anyhow::Result<()> {
+    pub fn resolve_resources(&mut self, store: &fetch::FetchContext) -> anyhow::Result<()> {
         // PERF: we don't deduplicate here, but probably should?
         self.resources_resolved.reserve(self.resources_unresolved.len());
         for (url, img) in std::mem::take(&mut self.resources_unresolved) {
             if self.resources_resolved.contains_key(&img.id()) {
                 continue;
             }
-            let (ty, bytes) = store.fetch(&*url).await.context("failed fetching resource")?;
+            let url: Url = url.deref().try_into().context("failed to parse url")?;
+            let (ty, bytes) = store.fetch(&url).context("failed fetching resource")?;
             ensure!(ty.is_image(), "resolved type {ty:?} is not an image");
             let img = img.resolve_with(ty, bytes);
             self.resources_resolved.insert(img.id(), Rc::new(img));
