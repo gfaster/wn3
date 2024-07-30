@@ -1,5 +1,6 @@
 use ahash::HashMap;
 use anyhow::{bail, ensure, Context, Result};
+use log::{error, info, warn};
 use url::Url;
 use wn3::{def::Section, overrides::OverrideTracker, *};
 use common::Rules;
@@ -8,8 +9,11 @@ use fetch::FetchContext;
 use generate::EpubBuilder;
 use scraper::Html;
 
+mod logger;
+
 
 fn main() -> Result<()> {
+    logger::init().unwrap();
     let f = std::fs::read_to_string("cfg.toml").context("failed to open config")?;
     let def: BookDef = toml::from_str(&f).context("failed to parse config")?;
     def.validate().context("failed to validate def")?;
@@ -30,24 +34,25 @@ fn main() -> Result<()> {
 
     let mut has_failed = false;
 
+    info!(target: "progress", "building chapters");
     for entry in def.content {
         match entry {
             def::UrlSelection::Range { start, end } => {
                 if let Err(e) = fetch_range(&cx, &mut book, &rules, start, end, &sections, &mut overrides).context("fetching urls") {
-                    eprintln!("{e:?}");
+                    error!("{e:?}");
                     has_failed = true;
                 }
             },
             def::UrlSelection::Url(url) => {
                 if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).context("fetching url") {
-                    eprintln!("{e:?}");
+                    error!("{e:?}");
                     has_failed = true;
                 }
             },
             def::UrlSelection::List(list) => {
                 for url in list {
                     if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).context("fetching url") {
-                        eprintln!("{e:?}");
+                        error!("{e:?}");
                         has_failed = true;
                     }
                 }
@@ -65,14 +70,19 @@ fn main() -> Result<()> {
 }
 
 fn finish(book: EpubBuilder) -> anyhow::Result<()> {
+    info!(target: "progress", "writing epub");
     let outpath = "output.epub";
     let mut outfile = std::fs::OpenOptions::new().write(true).read(false).truncate(true).create(true).open(outpath).context("could not open output epub")?;
     book.finish(&mut outfile).context("could not write to file")?;
-    eprintln!("running epubcheck...");
+    info!(target: "progress", "running epubcheck");
     if let Ok(res) = generate::epubcheck::epubcheck(outpath) {
         res.as_result(generate::epubcheck::Severity::Warning)?;
+        if let Err(e) = res.as_result(generate::epubcheck::Severity::Usage) {
+            warn!("epubcheck warnings");
+            warn!("{e}");
+        }
     } else {
-        eprintln!("could not run epubcheck")
+        warn!("could not run epubcheck")
     }
     Ok(())
 }
@@ -84,7 +94,7 @@ fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rules, sta
     let mut curr = start;
     loop {
         if let Some(section) = sections.get(&curr) {
-            eprintln!("TODO: handle section {section}")
+            warn!("TODO: handle section {section}")
         }
         ensure!(curr.scheme() == "https" || curr.scheme() == "file", "url {curr} does not have expected scheme");
         let (ty, val) = cx.fetch(&curr).context("failed fetching")?;

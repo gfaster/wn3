@@ -1,6 +1,7 @@
 use std::{sync::{Arc, Mutex}, time::Duration};
 
 use bytes::Bytes;
+use log::{info, trace};
 use ratelimit::wait_your_turn;
 use anyhow::{bail, Context, Result};
 
@@ -29,7 +30,7 @@ impl FetchContext {
     /// gets url from store, but will not touch network
     pub fn fetch_local(&self, url: &str) -> Result<(MediaType, Bytes)> {
         if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url).context("db access failed")? {
-            // eprintln!("{url:?} found in cache");
+            trace!("{url} found in cache");
             return Ok(bytes)
         }
         bail!("{url} not found in cache")
@@ -37,24 +38,18 @@ impl FetchContext {
 
     pub fn fetch(&self, url: &Url) -> Result<(MediaType, Bytes)> {
         if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
-            // eprintln!("{url:?} found in cache");
+            trace!("{url} found in cache");
             return Ok(bytes)
         }
         if url.scheme() == "file" {
             bail!("TODO: handle file:// for url {url}")
         }
         let domain = url.domain().unwrap();
-        eprint!("getting in line to access {}\r", domain);
+        trace!("getting in line to access {}", domain);
 
         // we use 65 seconds we tend to get connection closed before message completed errors
         wait_your_turn(domain, Duration::from_secs(65));
-        eprintln!("fetching url {url}");
-
-        // check cache again in case this was stored earlier
-        // if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
-        //     eprintln!("{url:?} found in cache after waiting");
-        //     return Ok(bytes)
-        // }
+        info!("fetching url {url}");
 
         let res = self.client.request_url("GET", &url).call();
         let resp = match res {
@@ -81,7 +76,7 @@ impl FetchContext {
         };
         self.cache.lock().unwrap().set(url.as_str(), &*bytes, resp_ty)?;
 
-        eprint!("completed request to {domain:?}                       \r");
+        trace!("completed request to {domain:?}");
 
         Ok((resp_ty, bytes))
     }

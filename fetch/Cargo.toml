@@ -9,3 +9,4 @@ bytes = "1.6.0"
 ureq = "2.10.0"
 rusqlite = {version = "0.31.0", features = ["blob", "url"]}
 url = "2.5.2"
+log = "0.4.22"

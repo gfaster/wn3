@@ -303,6 +303,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "log",
  "rusqlite",
  "ureq",
  "url",
@@ -354,6 +355,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "fetch",
+ "log",
  "time",
  "url",
  "zip",
@@ -817,8 +819,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "scraper"
 version = "0.19.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "761fb705fdf625482d2ed91d3f0559dcfeab2798fe2771c69560a774865d0802"
+source = "git+https://github.com/gfaster/scraper.git#f5cc684a0648a11891d2fa86d501b4f41d65da6a"
 dependencies = [
  "ahash",
  "cssparser",

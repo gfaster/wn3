@@ -1,5 +1,6 @@
 use anyhow::{bail, ensure, Context, Result};
 use generate::Chapter;
+use log::trace;
 use regex_lite::Regex;
 use scraper::{ElementRef, Html, Selector};
 
@@ -82,7 +83,7 @@ impl RuleSet for Reigokai {
         let first = it.clone().find(|el| !self.simple_exclude(el)).context("no paragraphs")?;
         if self.cfg.strip_fwd_tln && first.text().any(|t| t.contains("TLN") || t.contains("Sponsored")) {
             let mut removed = 0;
-            // eprintln!("removing prefix TLN");
+            trace!("removing prefix TLN");
             while let Some(el) = it.next() {
                 removed += 1;
                 if self.simple_exclude(&el) {

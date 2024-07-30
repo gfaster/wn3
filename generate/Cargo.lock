@@ -142,6 +142,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "log",
  "rusqlite",
  "ureq",
  "url",
@@ -174,6 +175,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "fetch",
+ "log",
  "time",
  "url",
  "zip",

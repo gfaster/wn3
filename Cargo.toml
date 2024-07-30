@@ -28,6 +28,7 @@ ureq = "2.10.0"
 
 [patch.crates-io]
 ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
+scraper = {git = "https://github.com/gfaster/scraper.git"}
 
 [profile.release]
 strip = true

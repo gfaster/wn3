@@ -1,5 +1,6 @@
 use std::{io::{self, prelude::*}, rc::Rc};
 use ahash::{HashMap, HashMapExt};
+use log::error;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
 use crate::{chapter::Chapter, epub::{package::ManifestItem, xml::XmlSink}, html_writer::EscapeBody, image::{ImageId, ResolvedImage}};
@@ -129,7 +130,7 @@ impl<'a> EpubBuilder<'a> {
         }
 
 
-        let spec = self.opf.finish().map_err(|e| eprintln!("{e:?}")).unwrap();
+        let spec = self.opf.finish().map_err(|e| error!("{e:?}")).unwrap();
 
         zip.start_file("EPUB/nav.xhtml", compressed.clone())?;
         write_nav(&mut zip, spec.title(), &chunks)?;
