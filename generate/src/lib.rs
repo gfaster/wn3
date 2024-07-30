@@ -8,6 +8,7 @@ pub mod image;
 
 pub mod epub;
 pub use epub::EpubBuilder;
+pub mod epubcheck;
 
 // #[cfg(test)]
 // mod tests {

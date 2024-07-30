@@ -32,26 +32,35 @@ async fn main() -> Result<()> {
     let sections: HashMap<_, _> = def.sections.into_iter().map(|Section { title, start }| (start, title)).collect();
     let mut overrides = OverrideTracker::new(def.overrides);
 
+    let mut has_failed = false;
+
     for entry in def.content {
         match entry {
             def::UrlSelection::Range { start, end } => {
                 if let Err(e) = fetch_range(&cx, &mut book, &rules, start, end, &sections, &mut overrides).await.context("fetching urls") {
-                    eprintln!("{e:?}")
+                    eprintln!("{e:?}");
+                    has_failed = true;
                 }
             },
             def::UrlSelection::Url(url) => {
                 if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).await.context("fetching url") {
-                    eprintln!("{e:?}")
+                    eprintln!("{e:?}");
+                    has_failed = true;
                 }
             },
             def::UrlSelection::List(list) => {
                 for url in list {
                     if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).await.context("fetching url") {
-                        eprintln!("{e:?}")
+                        eprintln!("{e:?}");
+                        has_failed = true;
                     }
                 }
             }
         }
+    }
+
+    if has_failed {
+        bail!("aborting due to previous failures")
     }
 
     finish(book).context("failed writing epub")?;
@@ -60,9 +69,15 @@ async fn main() -> Result<()> {
 }
 
 fn finish(book: EpubBuilder) -> anyhow::Result<()> {
-    let mut outfile = std::fs::OpenOptions::new().write(true).read(false).truncate(true).create(true).open("output.epub").context("could not open output epub")?;
+    let outpath = "output.epub";
+    let mut outfile = std::fs::OpenOptions::new().write(true).read(false).truncate(true).create(true).open(outpath).context("could not open output epub")?;
     book.finish(&mut outfile).context("could not write to file")?;
-
+    eprintln!("running epubcheck...");
+    if let Ok(res) = generate::epubcheck::epubcheck(outpath) {
+        res.as_result(generate::epubcheck::Severity::Warning)?;
+    } else {
+        eprintln!("could not run epubcheck")
+    }
     Ok(())
 }
 

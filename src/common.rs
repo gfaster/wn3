@@ -111,6 +111,7 @@ fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>, overrides: &O
                         warn!(target: "parsing", "image {e:?} has no src");
                         return
                     };
+                    let src = src.split_once('?').map_or(src, |(base, _query)| base);
                     let alt = e.attr("alt").map(|alt| alt.to_owned());
                     let mut img = Image::new(src);
                     img.alt = alt;

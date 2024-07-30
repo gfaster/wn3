@@ -21,7 +21,7 @@ pub struct BookDef {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
-// #[serde(untagged)]
+#[serde(untagged)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all_fields = "kebab-case")]
 #[serde(rename_all = "kebab-case")]

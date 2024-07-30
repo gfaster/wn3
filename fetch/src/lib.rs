@@ -47,14 +47,15 @@ impl FetchContext {
         let domain = url.domain().unwrap();
         eprint!("getting in line to access {}\r", domain);
 
-        wait_your_turn(domain, Duration::from_secs(60)).await;
+        // we use 65 seconds we tend to get connection closed before message completed errors
+        wait_your_turn(domain, Duration::from_secs(65)).await;
         eprintln!("fetching url {url}");
 
         // check cache again in case this was stored earlier
-        if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
-            eprintln!("{url:?} found in cache after waiting");
-            return Ok(bytes)
-        }
+        // if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
+        //     eprintln!("{url:?} found in cache after waiting");
+        //     return Ok(bytes)
+        // }
 
         let res = self.client.get(url.clone()).send().await;
         let resp = match res {
