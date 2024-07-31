@@ -73,8 +73,8 @@ impl std::ops::Deref for Setting {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Setting::Default(x) => &*x,
-            Setting::Override(x) => &*x,
+            Setting::Default(x) => x,
+            Setting::Override(x) => x,
         }
     }
 }

@@ -301,7 +301,7 @@ impl OpfSpec {
     }
 
     pub fn title(&self) -> &str {
-        &*self.title
+        &self.title
     }
 }
 
@@ -321,14 +321,14 @@ impl ManifestProperties {
     /// get the attribute field
     ///
     /// ```
-    /// type Prop = ManifestItemProperties;
+    /// use generate::epub::ManifestProperties as Prop;
     ///
     /// assert_eq!(Prop::empty().attribute_val(), None);
     /// assert_eq!(Prop::SCRIPTED.attribute_val().unwrap(), "scripted");
     /// assert_eq!(Prop::REMOTE_RESOURCES.attribute_val().unwrap(), "remote-resources");
     ///
     /// let compound = Prop::COVER_IMAGE | Prop::SVG | Prop::REMOTE_RESOURCES;
-    /// assert_eq!(compount.attribute_val().unwrap(), "remote-resources svg cover-image");
+    /// assert_eq!(compound.attribute_val().unwrap(), "remote-resources svg cover-image");
     /// ```
     pub fn attribute_val(self) -> Option<String> {
         let mut it = self.iter_names();
@@ -360,6 +360,7 @@ impl ManifestItem {
     /// gets the id of this element, equivalent to the basename of the path
     ///
     /// ```
+    /// # use generate::epub::ManifestItem;
     /// assert_eq!(ManifestItem::new("assets/cover.png").id(), "cover");
     /// assert_eq!(ManifestItem::new("book.xhtml").id(), "book");
     /// assert_eq!(ManifestItem::new("chapter_1.xhtml").id(), "chapter_1");
@@ -410,7 +411,7 @@ impl ManifestItem {
             props |= ManifestProperties::COVER_IMAGE;
         }
         Some(Self {
-            href: href.into(),
+            href,
             media_type,
             props,
         })

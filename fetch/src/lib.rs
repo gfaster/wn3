@@ -54,7 +54,7 @@ impl FetchContext {
         wait_your_turn(domain, Duration::from_secs(65));
         info!("fetching url {url}");
 
-        let res = self.client.request_url("GET", &url).call();
+        let res = self.client.request_url("GET", url).call();
         let resp = match res {
             Ok(succ) => {
                 succ
@@ -66,7 +66,7 @@ impl FetchContext {
         let Some(resp_ty) = resp.header("Content-Type") else {
             bail!("TODO: handle no content-type")
         };
-        let resp_ty = MediaType::from_str(resp_ty.split_once(';').map_or(resp_ty, |(x, _rem)| x));
+        let resp_ty = MediaType::from_mime(resp_ty.split_once(';').map_or(resp_ty, |(x, _rem)| x));
         let bytes: Bytes = {
             use std::io::prelude::*;
 
@@ -76,7 +76,7 @@ impl FetchContext {
             reader.read_to_end(&mut buf).context("failed to get body")?;
             buf.into()
         };
-        self.cache.lock().unwrap().set(url.as_str(), &*bytes, resp_ty)?;
+        self.cache.lock().unwrap().set(url.as_str(), &bytes, resp_ty)?;
 
         trace!("completed request to {domain:?}");
 

@@ -271,7 +271,7 @@ impl Display for InlineElement<'_> {
                     write!(f, "{disp}")
                 }
                 InlineElement::TextOwned(text) => {
-                    let disp = EscapeMd(&text);
+                    let disp = EscapeMd(text);
                     write!(f, "{disp}")
                 }
                 InlineElement::LineFeed => write!(f, " "),
@@ -295,7 +295,7 @@ impl Display for InlineElement<'_> {
                     write!(f, "{}", EscapeBody(txt))?;
                 }
                 Self::TextOwned(txt) => {
-                    write!(f, "{}", EscapeBody(&txt))?;
+                    write!(f, "{}", EscapeBody(txt))?;
                 }
                 InlineElement::LineFeed => {
                     writeln!(f, "<br />")?;
@@ -318,12 +318,12 @@ impl Display for Chapter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Chapter { title, p, .. } = self;
         if f.alternate() {
-            let title = EscapeMd(&*title);
+            let title = EscapeMd(title);
             writeln!(f, "# {title}")?;
             writeln!(f)?;
             p.disp_join("\n\n").fmt(f)?;
         } else {
-            let title = EscapeBody(&*title).surround_tag("h2");
+            let title = EscapeBody(title).surround_tag("h2");
             writeln!(f, "{title}")?;
             p.disp_join("\n").fmt(f)?;
         }
@@ -407,6 +407,12 @@ impl std::fmt::Display for ChapterBuilderError {
 }
 
 impl std::error::Error for ChapterBuilderError {}
+
+impl<'a> Default for ChapterBuilder<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl<'a> ChapterBuilder<'a> {
     pub fn new() -> Self {
@@ -539,7 +545,7 @@ impl<'a> ChapterBuilder<'a> {
             if self.resources_resolved.contains_key(&img.id()) {
                 continue;
             }
-            let (ty, bytes) = store.fetch_local(&*url).context("failed fetching resource")?;
+            let (ty, bytes) = store.fetch_local(&url).context("failed fetching resource")?;
             ensure!(ty.is_image(), "resolved type {ty:?} is not an image");
             let img = img.resolve_with(ty, bytes);
             self.resources_resolved.insert(img.id(), Rc::new(img));

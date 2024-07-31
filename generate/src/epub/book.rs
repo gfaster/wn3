@@ -37,7 +37,7 @@ impl<'a> EpubBuilder<'a> {
                 self.cover = Some(Rc::clone(o.get()));
             },
             Entry::Vacant(e) => {
-                let (ty, bytes) = cx.fetch(&Url::parse(&img.url()).with_context(|| format!("{} is invalid url", img.url()))?).with_context(|| format!("failed fetching {}", img.url()))?;
+                let (ty, bytes) = cx.fetch(&Url::parse(img.url()).with_context(|| format!("{} is invalid url", img.url()))?).with_context(|| format!("failed fetching {}", img.url()))?;
                 let img = Rc::new(img.resolve_with(ty, bytes));
                 self.cover = Some(Rc::clone(&img));
                 e.insert(img);
@@ -110,15 +110,15 @@ impl<'a> EpubBuilder<'a> {
         let mut zip = ZipWriter::new(w);
         let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         let compressed = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        zip.start_file("mimetype", stored.clone())?;
+        zip.start_file("mimetype", stored)?;
         zip.write_all(b"application/epub+zip")?;
-        zip.add_directory("EPUB", stored.clone())?;
-        zip.add_directory("EPUB/css", stored.clone())?;
-        zip.add_directory("META-INF", stored.clone())?;
+        zip.add_directory("EPUB", stored)?;
+        zip.add_directory("EPUB/css", stored)?;
+        zip.add_directory("META-INF", stored)?;
         if !self.additional_resources.is_empty() {
-            zip.add_directory("EPUB/assets", stored.clone())?;
+            zip.add_directory("EPUB/assets", stored)?;
         }
-        zip.start_file("META-INF/container.xml", stored.clone())?;
+        zip.start_file("META-INF/container.xml", stored)?;
         zip.write_all(CONTAINER_XML.as_bytes())?;
 
         // chunks here are just splitting the chapters into small enough files
@@ -140,14 +140,14 @@ impl<'a> EpubBuilder<'a> {
 
         self.opf.manifest.push(ManifestItem::new("nav.xhtml"));
         for (i, chunk) in chunks.iter().enumerate() {
-            zip.start_file(format!("EPUB/chunk_{i}.xhtml"), compressed.clone())?;
+            zip.start_file(format!("EPUB/chunk_{i}.xhtml"), compressed)?;
             write_chunk(&mut zip, chunk)?;
             self.opf.manifest.push(ManifestItem::new(format!("chunk_{i}.xhtml")));
         }
 
         for (_id, rsc) in self.additional_resources {
             let file = format!("EPUB/{}", rsc.src());
-            zip.start_file(file, compressed.clone())?;
+            zip.start_file(file, compressed)?;
             let mut item = ManifestItem::new_explicit(rsc.src().to_string(), rsc.media_type);
             if self.cover.as_ref().is_some_and(|c| c.id() == rsc.id()) {
                 item.props |= ManifestProperties::COVER_IMAGE;
@@ -159,14 +159,14 @@ impl<'a> EpubBuilder<'a> {
 
         let spec = self.opf.finish().map_err(|e| error!("{e:?}")).unwrap();
 
-        zip.start_file("EPUB/nav.xhtml", compressed.clone())?;
+        zip.start_file("EPUB/nav.xhtml", compressed)?;
         write_nav(&mut zip, spec.title(), &chunks)?;
 
-        zip.start_file("EPUB/css/epub.css", compressed.clone())?;
+        zip.start_file("EPUB/css/epub.css", compressed)?;
         zip.write_all(include_str!("../../epub.css").as_bytes())?;
 
 
-        zip.start_file("EPUB/package.opf", stored.clone())?;
+        zip.start_file("EPUB/package.opf", stored)?;
         spec.write(&mut zip)?;
         zip.flush()?;
         zip.finish()?;

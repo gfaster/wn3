@@ -53,7 +53,7 @@ impl MediaType {
         Some(ret)
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_mime(s: &str) -> Self {
         match s {
             "application/xhtml+xml" => MediaType::Xhtml,
             "application/xml" => MediaType::Xml,
@@ -101,9 +101,11 @@ impl MediaType {
     /// get the extension without the `.`
     ///
     /// ```
-    /// assert_eq!(MediaType::Xhtml, "xhtml");
-    /// assert_eq!(MediaType::Png, "png");
-    /// assert_eq!(MediaType::Jpg, "jpg");
+    /// # use fetch::MediaType;
+    ///
+    /// assert_eq!(MediaType::Xhtml.extension(), "xhtml");
+    /// assert_eq!(MediaType::Png.extension(), "png");
+    /// assert_eq!(MediaType::Jpg.extension(), "jpg");
     /// ```
     pub fn extension(self) -> &'static str {
         match self {

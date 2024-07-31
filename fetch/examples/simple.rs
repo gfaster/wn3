@@ -2,12 +2,11 @@ use std::sync::Arc;
 
 use fetch::FetchContext;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let db = rusqlite::Connection::open("example_simple.db");
-    let client = reqwest::ClientBuilder::new()
+    let client = ureq::AgentBuilder::new()
         .user_agent("Mozilla/5.0 (ratelimited fetch example)")
-        .build().unwrap();
+        .build();
     let cx = Arc::new(FetchContext::new(db.unwrap(), client).unwrap());
 
     let urls = [
@@ -23,11 +22,10 @@ async fn main() {
         "https://mozilla.org",
         "https://example.com",
     ];
-    let set = tokio::task::LocalSet::new();
+
     for url in urls {
         let cx = Arc::clone(&cx);
-        set.spawn_local(async move { cx.fetch(url).await.unwrap() });
+        cx.fetch(&url::Url::parse(url).unwrap()).unwrap();
         // tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
-    set.await;
 }

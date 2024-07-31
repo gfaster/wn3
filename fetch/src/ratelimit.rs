@@ -39,7 +39,7 @@ impl RateLimit {
 
 fn get_limiter(s: &str, default_period: Duration) -> RateLimit {
     let mut lock = LIMITS.lock().unwrap();
-    if let Some(l) = lock.get(s).clone() {
+    if let Some(l) = lock.get(s) {
         l.clone()
     } else {
         let l = RateLimit::new(default_period);
@@ -54,6 +54,6 @@ pub fn wait_your_turn(s: &str, default_period: Duration) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
 }
