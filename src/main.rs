@@ -18,7 +18,16 @@ fn main() -> Result<()> {
     let def: BookDef = toml::from_str(&f).context("failed to parse config")?;
     def.validate().context("failed to validate def")?;
 
-    let rules = Rules::new_il();
+    let args: Vec<_> = std::env::args().collect();
+    let rules = if let Some(s) = args.iter().find_map(|a| a.strip_prefix("--rules=")) {
+        match s {
+            "il" => Rules::new_il(),
+            "shikka" => Rules::new_shikka(),
+            _ => bail!("unknown ruleset {s}")
+        }
+    } else {
+        Rules::new_il()
+    };
     let mut book = generate::EpubBuilder::new();
     let conn = rusqlite::Connection::open("cache.db")?;
     let client = ureq::AgentBuilder::new().https_only(true).user_agent("wn-scraper3/0.0.1 (github.com/gfaster)").build();

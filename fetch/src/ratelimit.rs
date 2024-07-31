@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, ops::DerefMut, sync::{Arc, Mutex as StdMutex}, time::{Duration, Instant}};
 
+use log::info;
+
 // use tokio::{sync::Mutex, time::{self, Interval}};
 
 type Rls = StdMutex<BTreeMap<Box<str>, RateLimit>>;
@@ -25,7 +27,9 @@ impl RateLimit {
         let now = Instant::now();
         let elapsed = now.duration_since(*last);
         if elapsed < *dur {
-            std::thread::sleep(*dur - elapsed);
+            let wait = *dur - elapsed;
+            info!("waiting for {:.2} seconds", wait.as_secs_f32());
+            std::thread::sleep(wait);
             *last = Instant::now();
         } else {
             *last = now;

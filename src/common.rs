@@ -26,10 +26,18 @@ pub struct Rules {
 }
 
 impl Rules {
-    pub fn new_il() -> Self {
+    pub fn new(ruleset: impl RuleSet + 'static) -> Self {
         Rules {
-            inner: Box::new(crate::il::Reigokai::new()),
+            inner: Box::new(ruleset),
         }
+    }
+
+    pub fn new_il() -> Self {
+        Self::new(crate::il::Reigokai::new())
+    }
+
+    pub fn new_shikka() -> Self {
+        Self::new(crate::shikka::Rule::new())
     }
 
     pub fn parse<'a>(&self, html: &'a Html) -> Result<(Chapter<'a>, Option<&'a str>)> {
