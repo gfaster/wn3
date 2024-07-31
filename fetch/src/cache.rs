@@ -6,6 +6,7 @@ use rusqlite::{blob::Blob, Connection, OptionalExtension, Result};
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaType {
+    // numberings are stored in db, so they should only be added to
     Xhtml = 0,
     Xml = 1,
     Png = 2,
@@ -67,6 +68,22 @@ impl MediaType {
         }
     }
 
+    pub fn from_extension(s: &str) -> Option<Self> {
+        let ret = match s {
+            "xhtml" => MediaType::Xhtml,
+            "xml" => MediaType::Xml,
+            "png" => MediaType::Png,
+            "jpeg" | "jpg" => MediaType::Jpg,
+            "svg" => MediaType::Svg,
+            "css" => MediaType::Css,
+            "gif" => MediaType::Gif,
+            "webp" => MediaType::Webp,
+            "html" => MediaType::Html,
+            _ => return None
+        };
+        Some(ret)
+    }
+
     pub fn mime(self) -> &'static str {
         match self {
             MediaType::Xhtml => "application/xhtml+xml",
@@ -81,6 +98,13 @@ impl MediaType {
         }
     }
 
+    /// get the extension without the `.`
+    ///
+    /// ```
+    /// assert_eq!(MediaType::Xhtml, "xhtml");
+    /// assert_eq!(MediaType::Png, "png");
+    /// assert_eq!(MediaType::Jpg, "jpg");
+    /// ```
     pub fn extension(self) -> &'static str {
         match self {
             MediaType::Xhtml => "xhtml",

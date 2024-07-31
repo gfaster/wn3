@@ -1,15 +1,19 @@
-use std::{io::{self, prelude::*}, rc::Rc};
+use std::{collections::hash_map::Entry, io::{self, prelude::*}, rc::Rc};
 use ahash::{HashMap, HashMapExt};
+use anyhow::{Context, Result};
+use fetch::FetchContext;
 use log::error;
+use url::Url;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
-use crate::{chapter::Chapter, epub::{package::ManifestItem, xml::XmlSink}, html_writer::EscapeBody, image::{ImageId, ResolvedImage}};
+use crate::{chapter::Chapter, epub::{package::{ManifestItem, ManifestProperties}, xml::XmlSink}, html_writer::EscapeBody, image::{Image, ImageId, ResolvedImage}};
 
 use super::package::{ContributorRole, IdentifierType, OpfBuilder};
 
 pub struct EpubBuilder<'a> {
     opf: OpfBuilder,
     chapters: Vec<Chapter<'a>>,
+    cover: Option<Rc<ResolvedImage>>,
     additional_resources: HashMap<ImageId, Rc<ResolvedImage>>,
     chunk_size: usize,
 }
@@ -21,7 +25,25 @@ impl<'a> EpubBuilder<'a> {
             chapters: Vec::new(),
             chunk_size: 0,
             additional_resources: HashMap::new(),
+            cover: None,
         }
+    }
+
+    /// set the image, may make a web request if it's not cached
+    pub fn set_cover(&mut self, img: Image, cx: &FetchContext) -> Result<&mut Self> {
+        let entry = self.additional_resources.entry(img.id());
+        match entry {
+            Entry::Occupied(o) => {
+                self.cover = Some(Rc::clone(o.get()));
+            },
+            Entry::Vacant(e) => {
+                let (ty, bytes) = cx.fetch(&Url::parse(&img.url()).with_context(|| format!("{} is invalid url", img.url()))?).with_context(|| format!("failed fetching {}", img.url()))?;
+                let img = Rc::new(img.resolve_with(ty, bytes));
+                self.cover = Some(Rc::clone(&img));
+                e.insert(img);
+            }
+        }
+        Ok(self)
     }
 
     /// set the number of chapters that are combined to a single file via total bytes. If
@@ -45,17 +67,17 @@ impl<'a> EpubBuilder<'a> {
     }
 
     pub fn add_author(&mut self, author: impl Into<Box<str>>) -> &mut Self {
-        self.opf.contributers.push((ContributorRole::Author, author.into()));
+        self.opf.contributors.push((ContributorRole::Author, author.into()));
         self
     }
 
     pub fn add_translator(&mut self, translator: impl Into<Box<str>>) -> &mut Self {
-        self.opf.contributers.push((ContributorRole::Translator, translator.into()));
+        self.opf.contributors.push((ContributorRole::Translator, translator.into()));
         self
     }
 
     pub fn add_contributor(&mut self, role: ContributorRole, creator: impl Into<Box<str>>) -> &mut Self {
-        self.opf.contributers.push((role, creator.into()));
+        self.opf.contributors.push((role, creator.into()));
         self
     }
 
@@ -124,8 +146,13 @@ impl<'a> EpubBuilder<'a> {
         }
 
         for (_id, rsc) in self.additional_resources {
-            zip.start_file(format!("EPUB/{}", rsc.src()), compressed.clone())?;
-            self.opf.manifest.push(ManifestItem::new_explicit(rsc.src().to_string(), rsc.media_type));
+            let file = format!("EPUB/{}", rsc.src());
+            zip.start_file(file, compressed.clone())?;
+            let mut item = ManifestItem::new_explicit(rsc.src().to_string(), rsc.media_type);
+            if self.cover.as_ref().is_some_and(|c| c.id() == rsc.id()) {
+                item.props |= ManifestProperties::COVER_IMAGE;
+            }
+            self.opf.manifest.push(item);
             zip.write_all(&rsc.data)?;
         }
 

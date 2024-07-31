@@ -3,7 +3,7 @@ use std::{sync::{Arc, Mutex}, time::Duration};
 use bytes::Bytes;
 use log::{info, trace};
 use ratelimit::wait_your_turn;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 
 mod cache;
 use cache::ObjectCache;
@@ -12,7 +12,6 @@ use url::Url;
 
 mod ratelimit;
 
-// TODO: make this not async?
 #[derive(Clone)]
 pub struct FetchContext {
     cache: Arc<Mutex<cache::ObjectCache>>,
@@ -37,17 +36,21 @@ impl FetchContext {
     }
 
     pub fn fetch(&self, url: &Url) -> Result<(MediaType, Bytes)> {
+        if url.scheme() == "file" {
+            let path = url.to_file_path().map_err(|_| anyhow!("invalid file path"))?;
+            let ext = path.extension().context("no extension")?.to_str().context("path not utf-8")?;
+            let ty = MediaType::from_extension(ext).with_context(|| format!("extension {ext} is invalid"))?;
+            let data: Bytes = std::fs::read(&path).with_context(|| format!("could not read {}", path.display()))?.into();
+            return Ok((ty, data))
+        }
         if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
             trace!("{url} found in cache");
             return Ok(bytes)
         }
-        if url.scheme() == "file" {
-            bail!("TODO: handle file:// for url {url}")
-        }
         let domain = url.domain().unwrap();
         trace!("getting in line to access {}", domain);
 
-        // we use 65 seconds we tend to get connection closed before message completed errors
+        // we use 65 seconds to avoid connection closed before message completed errors
         wait_your_turn(domain, Duration::from_secs(65));
         info!("fetching url {url}");
 
@@ -60,9 +63,8 @@ impl FetchContext {
                 return Err(e.into());
             },
         };
-        // dbg!(resp.headers());
         let Some(resp_ty) = resp.header("Content-Type") else {
-            todo!("handle this error")
+            bail!("TODO: handle no content-type")
         };
         let resp_ty = MediaType::from_str(resp_ty.split_once(';').map_or(resp_ty, |(x, _rem)| x));
         let bytes: Bytes = {

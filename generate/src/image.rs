@@ -102,15 +102,19 @@ impl ResolvedImage {
         self.id
     }
 
-    pub(crate) fn src(&self) -> impl Display {
-        struct D(ImageId, MediaType);
-        impl Display for D {
+    pub(crate) fn src_with_basename<'a>(&self, base: impl Display + 'a) -> impl Display + 'a {
+        struct D<B>(B, MediaType);
+        impl<B: Display> Display for D<B> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "assets/{id}.{ext}", id = self.0, ext = self.1.extension())
+                write!(f, "assets/{base}.{ext}", base = self.0, ext = self.1.extension())
             }
         }
         let ty = self.media_type;
-        D(self.id, ty)
+        D(base, ty)
+    }
+
+    pub(crate) fn src(&self) -> impl Display {
+        self.src_with_basename(self.id)
     }
 }
 

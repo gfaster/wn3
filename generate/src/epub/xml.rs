@@ -76,6 +76,10 @@ impl<'a, W: Write> Element<'a, W> {
         self.sink.write_el_start(name, attrs, true)
     }
 
+    pub fn write_lf(&mut self) -> io::Result<()> {
+        write!(self.sink.w()?, "\n")
+    }
+
     pub fn write_field(self, val: impl std::fmt::Display) -> io::Result<()> {
         write!(self.sink.w()?, "{val}")
     }

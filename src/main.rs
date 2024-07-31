@@ -6,7 +6,7 @@ use wn3::{def::Section, overrides::OverrideTracker, *};
 use common::Rules;
 use def::BookDef;
 use fetch::FetchContext;
-use generate::EpubBuilder;
+use generate::{image::Image, EpubBuilder};
 use scraper::Html;
 
 mod logger;
@@ -28,30 +28,37 @@ fn main() -> Result<()> {
     if let Some(tl) = def.translator {
         book.add_translator(tl);
     }
+    let mut has_failed = false;
+
+    if let Some(cover) = def.cover_image {
+        if let Err(e) = book.set_cover(Image::new(cover.as_str()), &cx).context("could not set cover") {
+            error!("{e:?}");
+            has_failed = true;
+        }
+    }
 
     let sections: HashMap<_, _> = def.sections.into_iter().map(|Section { title, start }| (start, title)).collect();
     let mut overrides = OverrideTracker::new(def.overrides);
 
-    let mut has_failed = false;
 
     info!(target: "progress", "building chapters");
     for entry in def.content {
         match entry {
             def::UrlSelection::Range { start, end } => {
-                if let Err(e) = fetch_range(&cx, &mut book, &rules, start, end, &sections, &mut overrides).context("fetching urls") {
+                if let Err(e) = fetch_range(&cx, &mut book, &rules, start, end, &sections, &mut overrides) {
                     error!("{e:?}");
                     has_failed = true;
                 }
             },
             def::UrlSelection::Url(url) => {
-                if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).context("fetching url") {
+                if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides) {
                     error!("{e:?}");
                     has_failed = true;
                 }
             },
             def::UrlSelection::List(list) => {
                 for url in list {
-                    if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides).context("fetching url") {
+                    if let Err(e) = fetch_range(&cx, &mut book, &rules, url.clone(), url, &sections, &mut overrides) {
                         error!("{e:?}");
                         has_failed = true;
                     }
@@ -76,7 +83,7 @@ fn finish(book: EpubBuilder) -> anyhow::Result<()> {
     book.finish(&mut outfile).context("could not write to file")?;
     info!(target: "progress", "running epubcheck");
     if let Ok(res) = generate::epubcheck::epubcheck(outpath) {
-        res.as_result(generate::epubcheck::Severity::Warning)?;
+        res.as_result(generate::epubcheck::Severity::Error)?;
         if let Err(e) = res.as_result(generate::epubcheck::Severity::Usage) {
             warn!("epubcheck warnings");
             warn!("{e}");
@@ -110,11 +117,15 @@ fn fetch_range(cx: &FetchContext, book: &mut EpubBuilder<'_>, rules: &Rules, sta
             None
         };
         book.add_chapter(ch);
-        ensure!(prev.is_none() || prev != next, "url {prev:?} was repeated");
+        ensure!(prev.is_none() || prev != next, "url {} was repeated", prev.unwrap());
         if curr == end {
             break
         }
-        let Some(next) = next else { bail!("expected more urls (up until {end}) but found no next after {curr}") };
+
+        let Some(next) = next else {
+            warn!("expected more urls (up until {end}) but found no next after {curr}");
+            break
+        };
         prev = Some(curr);
         ensure!(next.host_str() == end.host_str(), "tried to go to different host for next url: {next}");
         curr = next

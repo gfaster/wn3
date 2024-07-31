@@ -7,10 +7,12 @@ pub mod sed;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub struct BookDef {
     pub title: String,
     pub subtitle: Option<String>,
     pub homepage: Url,
+    pub cover_image: Option<Url>,
     pub author: Option<String>,
     pub translator: Option<String>,
     pub content: Vec<UrlSelection>,

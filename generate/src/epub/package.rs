@@ -24,8 +24,8 @@ pub struct OpfBuilder {
     /// the suggested ordering
     pub identifiers: Vec<(IdentifierType, Box<str>)>,
 
-    /// contributers (creators) with their MARC relator role
-    pub contributers: Vec<(ContributorRole, Box<str>)>,
+    /// contributors (creators) with their MARC relator role
+    pub contributors: Vec<(ContributorRole, Box<str>)>,
 
     /// every item in reading order.
     ///
@@ -39,6 +39,9 @@ pub struct OpfError {
     no_nav: bool,
     no_identifiers: bool,
     duplicate_manifest_item: bool,
+    multiple_nav: bool,
+    multiple_cover: bool,
+    conflicting_manifest_properties: bool,
 
     // phase 2 errors
 }
@@ -47,7 +50,10 @@ impl OpfError {
     fn any(&self) -> bool {
         self.no_nav |
         self.no_identifiers |
-        self.duplicate_manifest_item
+        self.duplicate_manifest_item |
+        self.multiple_nav | 
+        self.multiple_cover |
+        self.conflicting_manifest_properties
     }
 }
 
@@ -59,7 +65,7 @@ pub struct OpfSpec {
     date: SystemTime,
 
     identifiers: Vec<(IdentifierType, Box<str>)>,
-    contributers: Vec<(ContributorRole, Box<str>)>,
+    contributors: Vec<(ContributorRole, Box<str>)>,
 
     manifest_nav: ManifestItem,
     manifest_cover: Option<ManifestItem>,
@@ -77,7 +83,7 @@ impl OpfBuilder {
             date: SystemTime::UNIX_EPOCH,
             manifest: Vec::new(),
             identifiers: Vec::new(),
-            contributers: Vec::new(),
+            contributors: Vec::new(),
         }
     }
 
@@ -95,33 +101,72 @@ impl OpfBuilder {
             date,
             manifest,
             identifiers,
-            contributers,
+            contributors,
         } = self;
         let mut e = OpfError {
             no_nav: false,
             duplicate_manifest_item: false,
             no_identifiers: false,
+            multiple_nav: false,
+            multiple_cover: false,
+            conflicting_manifest_properties: false,
         };
         if identifiers.is_empty() {
             e.no_identifiers = true;
         }
         let manifest_len = manifest.len();
+        let mut found_nav = false;
+        let mut found_cover = false;
+        for item in &manifest {
+            if item.props.contains(ManifestProperties::NAV) {
+                if !found_nav {
+                    found_nav = true
+                } else {
+                    e.multiple_nav = true;
+                }
+            }
+            if item.props.contains(ManifestProperties::COVER_IMAGE) {
+                if !found_cover {
+                    found_cover = true
+                } else {
+                    e.multiple_cover = true;
+                }
+            }
+            if item.props.contains(ManifestProperties::COVER_IMAGE) && !item.media_type.is_image() {
+                e.conflicting_manifest_properties = true
+            }
+            if item.props.contains(ManifestProperties::NAV) && item.media_type != MediaType::Xhtml {
+                e.conflicting_manifest_properties = true
+            }
+            // TODO: check more illegal variations
+        }
+        if !found_nav {
+            e.no_nav = true;
+        }
+        if e.any() {
+            return Err(e);
+        }
+        let mut manifest_nav = None;
+        let mut manifest_cover = None;
         let (mut manifest, mut spine): (HashMap<_, _>, Vec<_>) = manifest.into_iter().map(|m| {
             let id = Rc::from(m.id());
+            if m.props.contains(ManifestProperties::NAV) {
+                manifest_nav = Some(Rc::clone(&id));
+            }
+            if m.props.contains(ManifestProperties::COVER_IMAGE) {
+                manifest_cover = Some(Rc::clone(&id));
+            }
             ((Rc::clone(&id), m), id)
         }).collect();
         spine.retain(|i| manifest[i].media_type == MediaType::Xhtml);
-        if !manifest.contains_key("nav") {
-            e.no_nav = true;
-        }
         if manifest.len() != manifest_len {
             e.duplicate_manifest_item = true;
         }
         if e.any() {
             return Err(e);
         }
-        let manifest_nav = manifest.remove("nav").unwrap();
-        let manifest_cover = manifest.remove("cover");
+        let manifest_nav = manifest.remove(&manifest_nav.unwrap()).unwrap();
+        let manifest_cover = manifest_cover.map(|id| manifest.remove(&id).unwrap());
         let date = if date == SystemTime::UNIX_EPOCH {
             SystemTime::now()
         } else {
@@ -137,7 +182,7 @@ impl OpfBuilder {
             title,
             subtitle,
             publisher,
-            contributers,
+            contributors,
             date,
             identifiers,
             manifest_nav,
@@ -178,56 +223,76 @@ impl OpfSpec {
 
             for (i, &(_ty, ref id)) in self.identifiers.iter().enumerate() {
                 metadata.mkel("dc:identifier", [("id", &*format!("identifier_{i}"))])?.write_field(id)?;
+                metadata.write_lf()?;
             }
             metadata.mkel("dc:date", [])?.write_field(datetime.date())?;
             let datestr = datetime.format(
                 &format_description::parse("[year]-[month]-[day]T[hour]:[minute]:[second]Z")
                     .expect("valid format description")).unwrap();
+            metadata.write_lf()?;
             metadata.mkel("meta", [("property","dcterms:modified")])?.write_field(datestr)?;
-            for (i, &(role, ref creator)) in self.contributers.iter().enumerate() {
+            metadata.write_lf()?;
+            for (i, &(role, ref creator)) in self.contributors.iter().enumerate() {
                 let id =    format!("creator{i:03}");
                 let selid = format!("#{id}");
-                // FIXME: dc:creator is primary, dc:contributer is secondary
-                metadata.mkel("dc:creator", [("id", &*id)])?.write_field(&**creator)?;
+                // TODO: allow specification of attribution level
+                let attribution = if role == ContributorRole::Author {
+                    "dc:creator"
+                } else {
+                    "dc:contributor"
+                };
+                metadata.mkel(attribution, [("id", &*id)])?.write_field(&**creator)?;
+                metadata.write_lf()?;
                 metadata.mkel("meta", [
                     ("refines", &*selid),
                     ("property", "role"),
                     ("scheme", "marc:relators"),
                 ])?.write_field(role.marc_code())?;
+                metadata.write_lf()?;
             }
             metadata.mkel("dc:language", [])?.write_field(&*self.language)?;
             if let Some(publisher) = self.publisher.get() {
                 metadata.mkel("dc:publisher", [])?.write_field(publisher)?;
+                metadata.write_lf()?;
             }
         }
         {
             let mut manifest = pkg.mkel("manifest", [])?;
-            manifest.mkel_selfclosed("item", [
-                ("id", "nav"),
-                ("href", &*self.manifest_nav.href),
-                ("media-type", self.manifest_nav.media_type.mime()),
-                ("properties", "nav"),
-            ])?;
+            {
+                let nav_prop = self.manifest_nav.props.attribute_val().unwrap();
+                assert!(nav_prop.contains("nav"));
+                manifest.mkel_selfclosed("item", [
+                    ("id", "nav"),
+                    ("href", &*self.manifest_nav.href),
+                    ("media-type", self.manifest_nav.media_type.mime()),
+                    ("properties", &nav_prop),
+                ])?;
+                manifest.write_lf()?;
+            }
             if let Some(cover) = &self.manifest_cover {
                 manifest.mkel_selfclosed("item", [
                     ("id", cover.id()),
                     ("href", &*cover.href),
                     ("media-type", cover.media_type.mime()),
-                    ("properties", "cover-image"),
+                    ("properties", &cover.props.attribute_val().unwrap()),
                 ])?;
+                manifest.write_lf()?;
             }
             for (id, item) in &self.manifest {
+                let attr = item.props.attribute_val();
                 manifest.mkel_selfclosed("item", [
                     ("id", &**id),
                     ("href", &*item.href),
                     ("media-type", item.media_type.mime())
-                ])?;
+                ].into_iter().chain(attr.as_deref().map(|a| ("properties", a))))?;
+                manifest.write_lf()?;
             }
         }
         {
             let mut spine = pkg.mkel("spine", [])?;
             for id in &self.spine {
                 spine.mkel_selfclosed("itemref", [("idref", &**id)])?;
+                spine.write_lf()?;
             }
         }
         drop(pkg);
@@ -240,20 +305,66 @@ impl OpfSpec {
     }
 }
 
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ManifestProperties: u32 {
+        const MATHML = 1 << 0;
+        const REMOTE_RESOURCES = 1 << 1;
+        const SCRIPTED = 1 << 2;
+        const SVG = 1 << 3;
+        const COVER_IMAGE = 1 << 4;
+        const NAV = 1 << 5;
+    }
+}
+
+impl ManifestProperties {
+    /// get the attribute field
+    ///
+    /// ```
+    /// type Prop = ManifestItemProperties;
+    ///
+    /// assert_eq!(Prop::empty().attribute_val(), None);
+    /// assert_eq!(Prop::SCRIPTED.attribute_val().unwrap(), "scripted");
+    /// assert_eq!(Prop::REMOTE_RESOURCES.attribute_val().unwrap(), "remote-resources");
+    ///
+    /// let compound = Prop::COVER_IMAGE | Prop::SVG | Prop::REMOTE_RESOURCES;
+    /// assert_eq!(compount.attribute_val().unwrap(), "remote-resources svg cover-image");
+    /// ```
+    pub fn attribute_val(self) -> Option<String> {
+        let mut it = self.iter_names();
+        let mut buf = String::from(it.next()?.0);
+        for (name, _) in it {
+            buf.push(' ');
+            buf.push_str(name);
+        }
+        buf.make_ascii_lowercase();
+        // this is slow, but the other real option is use unsafe. I don't think it'll matter at
+        // all.
+        let buf = buf.chars().map(|c| if c == '_' { '-' } else { c }).collect();
+
+        Some(buf)
+    }
+}
+
 /// an `<item />` in manifest
 ///
 /// the `id` field is derived from the `href` file stem, `media-type` is inferred from file
 /// extension by default.
-///
-/// the following `id`s are reserved:
-/// - "cover" (`cover-image`)
-/// - "nav"
 pub struct ManifestItem {
     href: Box<str>,
-    media_type: MediaType
+    media_type: MediaType,
+    pub props: ManifestProperties,
 }
 
 impl ManifestItem {
+    /// gets the id of this element, equivalent to the basename of the path
+    ///
+    /// ```
+    /// assert_eq!(ManifestItem::new("assets/cover.png").id(), "cover");
+    /// assert_eq!(ManifestItem::new("book.xhtml").id(), "book");
+    /// assert_eq!(ManifestItem::new("chapter_1.xhtml").id(), "chapter_1");
+    /// assert_eq!(ManifestItem::new("part1/images/im1.png").id(), "im1");
+    /// ```
     pub fn id(&self) -> &str {
         let (stem, _ext) = self.href.rsplit_once('.').expect("href has stem");
         stem.rsplit_once('/').map_or(stem, |(_, id)| id)
@@ -263,14 +374,20 @@ impl ManifestItem {
         Self::try_new(href).expect("invalid href")
     }
 
-    /// don't infer media type
+    /// don't infer media type or properties
     pub fn new_explicit(href: impl Into<Box<str>>, ty: MediaType) -> Self {
         Self {
             href: href.into(),
             media_type: ty,
+            props: ManifestProperties::empty(),
         }
     }
 
+    /// create a new item from path. 
+    ///
+    /// A few ids (basename) will implicitly enable properties:
+    /// - `nav` implies [`ManifestProperties::NAV`]
+    /// - `cover` implies [`ManifestProperties::COVER_IMAGE`]
     pub fn try_new(href: impl Into<Box<str>>) -> Option<Self> {
         let href = href.into();
         let (stem, ext) = href.rsplit_once('.')?;
@@ -286,9 +403,16 @@ impl ManifestItem {
         if id.is_empty() {
             return None
         }
+        let mut props = ManifestProperties::empty();
+        if id == "nav" {
+            props |= ManifestProperties::NAV;
+        } else if id == "cover" {
+            props |= ManifestProperties::COVER_IMAGE;
+        }
         Some(Self {
             href: href.into(),
             media_type,
+            props,
         })
     }
 }

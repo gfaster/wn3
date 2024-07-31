@@ -1,6 +1,7 @@
 use std::{path::Path, str::FromStr, sync::Mutex};
 
 use anyhow::anyhow;
+use log::debug;
 
 static LOCK: Mutex<()> = Mutex::new(());
 
@@ -132,16 +133,16 @@ impl EpubcheckResult {
         self.most_severe.map_or(false, |sev| sev >= Severity::Error)
     }
 
-    pub fn as_result(&self, max_sev: Severity) -> anyhow::Result<()> {
+    pub fn as_result(&self, fail_sev: Severity) -> anyhow::Result<()> {
         use std::fmt::Write;
-        if self.most_severe.map_or(true, |sev| sev > max_sev) {
+        if self.most_severe.map_or(true, |sev| sev < fail_sev) {
             return Ok(())
         }
 
         let mut res = String::from("epubcheck errors:");
         res.reserve(self.msgs.len() * 20);
         for msg in &self.msgs {
-            write!(res, "\n        {msg}").unwrap();
+            write!(res, "\n    {msg}").unwrap();
         }
         Err(anyhow!(res))
     }
@@ -150,12 +151,17 @@ impl EpubcheckResult {
 pub fn epubcheck(path: impl AsRef<Path>) -> std::io::Result<EpubcheckResult> {
     // take lock since epubcheck uses all cores, so it doesn't make sense to try and compete
     let lock = LOCK.lock().unwrap();
-    let res = std::process::Command::new("epubcheck").arg(path.as_ref()).output()?;
+    let res = std::process::Command::new("epubcheck").arg("-q").arg("-u").arg(path.as_ref()).output()?;
     drop(lock);
     let err = std::str::from_utf8(&res.stderr).unwrap();
     let mut msgs = Vec::new();
     let mut most_severe = None;
     for line in err.lines() {
+        if line.is_empty() {
+            // if there are errors, there is junk at the end
+            break;
+        }
+        debug!("epubcheck line: {line}");
         let (sevcode, msg) = line.split_once(": ").unwrap();
         let (sev, code) = sevcode.split_once('(').unwrap();
         let code = code.trim_end_matches(')');
