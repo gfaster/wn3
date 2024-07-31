@@ -25,6 +25,13 @@ rusqlite = "0.31.0"
 fetch = {path = "./fetch"}
 generate = {path = "./generate"}
 
+ahash.workspace = true
+anyhow.workspace = true
+log.workspace = true
+url.workspace = true
+ureq.workspace = true
+rusqlite.workspace = true
+
 scraper = "0.19.1"
 serde = { version = "1.0.204", features = ["derive"] }
 toml = "0.8.15"

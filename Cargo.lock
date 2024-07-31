@@ -1265,15 +1265,21 @@ dependencies = [
 name = "wn3"
 version = "0.1.0"
 dependencies = [
+ "ahash",
+ "anyhow",
  "clap",
  "ego-tree",
  "fetch",
  "generate",
+ "log",
  "markup5ever",
  "regex-lite",
+ "rusqlite",
  "scraper",
  "serde",
  "toml",
+ "ureq",
+ "url",
 ]
 
 [[package]]
