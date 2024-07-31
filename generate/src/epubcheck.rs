@@ -52,7 +52,7 @@ impl FromStr for Severity {
             "WARNING" => Severity::Warning,
             "ERROR" => Severity::Error,
             "FATAL" => Severity::Fatal,
-            _ => return Err(SeverityParseError)
+            _ => return Err(SeverityParseError),
         };
         Ok(res)
     }
@@ -66,10 +66,10 @@ impl std::fmt::Display for Severity {
             Severity::Warning => "WARNING",
             Severity::Error => "ERROR",
             Severity::Fatal => "FATAL",
-        }.fmt(f)
+        }
+        .fmt(f)
     }
 }
-
 
 pub struct Code {
     cat: [u8; 3],
@@ -81,24 +81,26 @@ impl FromStr for Code {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.len() != 7 {
-            return Err(CodeParseError)
+            return Err(CodeParseError);
         }
         if s.as_bytes()[3] != b'-' {
-            return Err(CodeParseError)
+            return Err(CodeParseError);
         }
 
         let num: u8 = s[4..].parse().map_err(|_| CodeParseError)?;
         let cat: [u8; 3] = std::array::from_fn(|i| s.as_bytes()[i]);
-        Ok(Code {
-            cat,
-            num,
-        })
+        Ok(Code { cat, num })
     }
 }
 
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{cat}-{num}", cat = std::str::from_utf8(&self.cat).unwrap(), num = self.num)
+        write!(
+            f,
+            "{cat}-{num}",
+            cat = std::str::from_utf8(&self.cat).unwrap(),
+            num = self.num
+        )
     }
 }
 
@@ -136,7 +138,7 @@ impl EpubcheckResult {
     pub fn as_result(&self, fail_sev: Severity) -> anyhow::Result<()> {
         use std::fmt::Write;
         if self.most_severe.map_or(true, |sev| sev < fail_sev) {
-            return Ok(())
+            return Ok(());
         }
 
         let mut res = String::from("epubcheck errors:");
@@ -151,7 +153,11 @@ impl EpubcheckResult {
 pub fn epubcheck(path: impl AsRef<Path>) -> std::io::Result<EpubcheckResult> {
     // take lock since epubcheck uses all cores, so it doesn't make sense to try and compete
     let lock = LOCK.lock().unwrap();
-    let res = std::process::Command::new("epubcheck").arg("-q").arg("-u").arg(path.as_ref()).output()?;
+    let res = std::process::Command::new("epubcheck")
+        .arg("-q")
+        .arg("-u")
+        .arg(path.as_ref())
+        .output()?;
     drop(lock);
     let err = std::str::from_utf8(&res.stderr).unwrap();
     let mut msgs = Vec::new();
@@ -168,7 +174,11 @@ pub fn epubcheck(path: impl AsRef<Path>) -> std::io::Result<EpubcheckResult> {
         let code: Code = code.parse().unwrap();
         let sev: Severity = sev.parse().unwrap();
         most_severe = Some(most_severe.unwrap_or(Severity::Info).max(sev));
-        msgs.push(Message { code, sev, msg: msg.into() })
+        msgs.push(Message {
+            code,
+            sev,
+            msg: msg.into(),
+        })
     }
     Ok(EpubcheckResult { most_severe, msgs })
 }

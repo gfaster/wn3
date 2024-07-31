@@ -46,33 +46,45 @@ impl OverrideTracker {
             let subs: Rc<[_]> = entry.subs.into();
             match entry.urls {
                 UrlSelection::Range { start, end } => {
-                    unactivated.entry(start.as_str().into()).or_default().push(OverrideChoice {
-                        urls: UrlSelection::Range { start, end },
-                        title: None,
-                        subs,
-                    });
-                },
+                    unactivated
+                        .entry(start.as_str().into())
+                        .or_default()
+                        .push(OverrideChoice {
+                            urls: UrlSelection::Range { start, end },
+                            title: None,
+                            subs,
+                        });
+                }
                 UrlSelection::Url(url) => {
-                    unactivated.entry(url.as_str().into()).or_default().push(OverrideChoice {
-                        urls: UrlSelection::Url(url),
-                        title: entry.title.clone(),
-                        subs,
-                    });
-                },
+                    unactivated
+                        .entry(url.as_str().into())
+                        .or_default()
+                        .push(OverrideChoice {
+                            urls: UrlSelection::Url(url),
+                            title: entry.title.clone(),
+                            subs,
+                        });
+                }
                 UrlSelection::List(urls) => {
                     let urls = HashSet::from_iter(urls);
                     for url in urls {
-                        unactivated.entry(url.as_str().into()).or_default().push(OverrideChoice { 
-                            urls: UrlSelection::Url(url),
-                            // I don't expect this to be used
-                            title: entry.title.clone(),
-                            subs: subs.clone()
-                        });
+                        unactivated
+                            .entry(url.as_str().into())
+                            .or_default()
+                            .push(OverrideChoice {
+                                urls: UrlSelection::Url(url),
+                                // I don't expect this to be used
+                                title: entry.title.clone(),
+                                subs: subs.clone(),
+                            });
                     }
-                },
+                }
             }
         }
-        OverrideTracker { active: HashMap::new(), unactivated }
+        OverrideTracker {
+            active: HashMap::new(),
+            unactivated,
+        }
     }
 
     pub fn with_url<'a>(&'a mut self, url: &Url) -> OverrideSet<'a> {
@@ -106,10 +118,10 @@ impl OverrideTracker {
                 match &entry.urls {
                     UrlSelection::Url(_) => {
                         unreachable!("single urls were removed prior")
-                    },
+                    }
                     UrlSelection::Range { start: _, end: _ } => {
                         ret.seds.push(entry.subs.clone());
-                    },
+                    }
                     UrlSelection::List(_) => unreachable!(),
                 }
             }

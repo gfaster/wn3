@@ -1,13 +1,12 @@
 #![allow(dead_code)]
 
-use std::cell::Cell;
 use std::any::Any;
+use std::cell::Cell;
 use std::pin::Pin;
-
 
 /// append-only structure for doing easy Maybe-borrowed memory
 pub(crate) struct MemCtx {
-    mem: Cell<Vec<Pin<Box<dyn Managed>>>>
+    mem: Cell<Vec<Pin<Box<dyn Managed>>>>,
 }
 
 trait Managed {}
@@ -15,7 +14,9 @@ impl<T> Managed for T {}
 
 impl MemCtx {
     pub fn new() -> Self {
-        MemCtx { mem: Cell::new(Vec::new()) }
+        MemCtx {
+            mem: Cell::new(Vec::new()),
+        }
     }
 
     pub fn add<T: Any>(&self, item: impl Into<Box<T>>) -> &T {

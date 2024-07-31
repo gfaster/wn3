@@ -1,11 +1,11 @@
-use generate::{chapter::{Chapter, ChapterBuilder}, epub::EpubBuilder};
-
+use generate::{
+    chapter::{Chapter, ChapterBuilder},
+    epub::EpubBuilder,
+};
 
 fn the_raven() -> Chapter<'static> {
     let mut b = ChapterBuilder::new();
-    b
-        .preserve_line_feeds(true)
-        .title_set("The Raven");
+    b.preserve_line_feeds(true).title_set("The Raven");
 
     for stanza in THE_RAVEN.split("\n\n") {
         b.add_text(stanza).paragraph_finish();
@@ -16,8 +16,7 @@ fn the_raven() -> Chapter<'static> {
 
 fn a_dream_within_a_dream() -> Chapter<'static> {
     let mut b = ChapterBuilder::new();
-    b
-        .preserve_line_feeds(true)
+    b.preserve_line_feeds(true)
         .title_set("A Dream within a Dream");
 
     for stanza in A_DREAM_WITHIN_A_DREAM.split("\n\n") {
@@ -29,13 +28,14 @@ fn a_dream_within_a_dream() -> Chapter<'static> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut b = EpubBuilder::new();
-    b
-        .add_identifier(generate::epub::IdentifierType::Adhoc, "poetry collection epub")
-        .set_title("Edgar Allan Poe Poetry Collection")
-        .add_author("Edgar Allan Poe")
-        .add_chapter(the_raven())
-        .add_chapter(a_dream_within_a_dream())
-    ;
+    b.add_identifier(
+        generate::epub::IdentifierType::Adhoc,
+        "poetry collection epub",
+    )
+    .set_title("Edgar Allan Poe Poetry Collection")
+    .add_author("Edgar Allan Poe")
+    .add_chapter(the_raven())
+    .add_chapter(a_dream_within_a_dream());
 
     let out = std::fs::OpenOptions::new()
         .create(true)

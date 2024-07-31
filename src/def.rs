@@ -28,10 +28,7 @@ pub struct BookDef {
 #[serde(rename_all_fields = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
 pub enum UrlSelection {
-    Range {
-        start: Url,
-        end: Url,
-    },
+    Range { start: Url, end: Url },
     Url(Url),
     List(Vec<Url>),
 }
@@ -57,8 +54,7 @@ pub struct OverrideChoice {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct BookDefValidationError {
-}
+pub struct BookDefValidationError {}
 
 impl std::fmt::Display for BookDefValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -75,5 +71,4 @@ impl BookDef {
 }
 
 #[cfg(test)]
-mod tests {
-}
+mod tests {}

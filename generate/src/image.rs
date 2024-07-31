@@ -4,20 +4,24 @@ use ahash::RandomState;
 use bytes::Bytes;
 use fetch::MediaType;
 
-use crate::{epub::package::ManifestItem, html_writer::{EscapeAttr, EscapeMd}};
-
+use crate::{
+    epub::package::ManifestItem,
+    html_writer::{EscapeAttr, EscapeMd},
+};
 
 #[cfg(debug_assertions)]
 fn assert_no_collisions(url: &str, hash: u64) {
-    use std::sync::Mutex;
     use ahash::{HashMap, HashMapExt};
+    use std::sync::Mutex;
     static MAP: Mutex<Option<HashMap<u64, Box<str>>>> = Mutex::new(None);
     let mut lock = MAP.lock().unwrap();
     if lock.is_none() {
         *lock = Some(HashMap::new());
     }
     let m = lock.as_mut().unwrap();
-    m.entry(hash).and_modify(|x| assert_eq!(&**x, url, "hash collision")).or_insert_with(|| url.into());
+    m.entry(hash)
+        .and_modify(|x| assert_eq!(&**x, url, "hash collision"))
+        .or_insert_with(|| url.into());
 }
 
 #[cfg(not(debug_assertions))]
@@ -57,18 +61,17 @@ impl Image {
     }
 
     pub(crate) fn resolve_with(self, ty: MediaType, data: Bytes) -> ResolvedImage {
-        ResolvedImage { 
+        ResolvedImage {
             id: self.id(),
             alt: self.alt,
             media_type: ty,
-            data
+            data,
         }
     }
 
     pub fn url(&self) -> &Arc<str> {
         &self.url
     }
-
 }
 
 #[derive(Debug)]
@@ -106,7 +109,12 @@ impl ResolvedImage {
         struct D<B>(B, MediaType);
         impl<B: Display> Display for D<B> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "assets/{base}.{ext}", base = self.0, ext = self.1.extension())
+                write!(
+                    f,
+                    "assets/{base}.{ext}",
+                    base = self.0,
+                    ext = self.1.extension()
+                )
             }
         }
         let ty = self.media_type;

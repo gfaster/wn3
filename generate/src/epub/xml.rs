@@ -18,13 +18,19 @@ static XHTML_HEADER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 impl<W: Write> XmlSink<W> {
     pub fn new(mut w: W) -> io::Result<Self> {
         w.write_all(XML_HEADER.as_bytes())?;
-        let ret = XmlSink { w, queue: String::new() };
+        let ret = XmlSink {
+            w,
+            queue: String::new(),
+        };
         Ok(ret)
     }
 
     pub fn new_xhtml(mut w: W) -> io::Result<Self> {
         w.write_all(XHTML_HEADER.as_bytes())?;
-        let ret = XmlSink { w, queue: String::new() };
+        let ret = XmlSink {
+            w,
+            queue: String::new(),
+        };
         Ok(ret)
     }
 
@@ -36,12 +42,21 @@ impl<W: Write> XmlSink<W> {
         Ok(&mut self.w)
     }
 
-    pub fn mkel<'a>(&'a mut self, name: &'static str, attrs: impl IntoIterator<Item = (&'a str, &'a str)>) -> io::Result<Element<W>> {
+    pub fn mkel<'a>(
+        &'a mut self,
+        name: &'static str,
+        attrs: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> io::Result<Element<W>> {
         self.write_el_start(name, attrs, false)?;
         Ok(Element { sink: self, name })
     }
 
-    fn write_el_start<'a>(&mut self, name: &str, attrs: impl IntoIterator<Item = (&'a str, &'a str)>, self_closed: bool) -> io::Result<()> {
+    fn write_el_start<'a>(
+        &mut self,
+        name: &str,
+        attrs: impl IntoIterator<Item = (&'a str, &'a str)>,
+        self_closed: bool,
+    ) -> io::Result<()> {
         let w = self.w()?;
         write!(w, "<{name}")?;
         for (attr, val) in attrs {
@@ -67,12 +82,23 @@ pub struct Element<'a, W> {
 }
 
 impl<'a, W: Write> Element<'a, W> {
-    pub fn mkel<'b>(&'b mut self, name: &'static str, attrs: impl IntoIterator<Item = (&'b str, &'b str)>) -> io::Result<Element<'b, W>> {
+    pub fn mkel<'b>(
+        &'b mut self,
+        name: &'static str,
+        attrs: impl IntoIterator<Item = (&'b str, &'b str)>,
+    ) -> io::Result<Element<'b, W>> {
         self.sink.write_el_start(name, attrs, false)?;
-        Ok(Element { sink: self.sink, name })
+        Ok(Element {
+            sink: self.sink,
+            name,
+        })
     }
 
-    pub fn mkel_selfclosed<'b>(&mut self, name: &'static str, attrs: impl IntoIterator<Item = (&'b str, &'b str)>) -> io::Result<()> {
+    pub fn mkel_selfclosed<'b>(
+        &mut self,
+        name: &'static str,
+        attrs: impl IntoIterator<Item = (&'b str, &'b str)>,
+    ) -> io::Result<()> {
         self.sink.write_el_start(name, attrs, true)
     }
 

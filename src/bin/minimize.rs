@@ -1,7 +1,10 @@
 use clap::Parser;
 use ego_tree::NodeId;
 use markup5ever::namespace_url;
-use markup5ever::{interface::{tree_builder::TreeSink, NodeOrText}, ns, LocalName, QualName};
+use markup5ever::{
+    interface::{tree_builder::TreeSink, NodeOrText},
+    ns, LocalName, QualName,
+};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -15,7 +18,9 @@ const GOOD_NEXT: &str = "https://example.com/next";
 fn set_attr(html: &mut Html, id: NodeId, attr: &str, val: &str) {
     let qualname = QualName::new(None, ns!(), LocalName::from(attr));
     let mut node = html.tree.get_mut(id).expect("node id not in tree");
-    let Node::Element(el) = node.value() else { panic!("node id {id:?} is not an element") };
+    let Node::Element(el) = node.value() else {
+        panic!("node id {id:?} is not an element")
+    };
     *el.attrs.get_mut(&qualname).unwrap() = val.into();
 }
 
@@ -40,7 +45,10 @@ fn args() -> (Html, ValidateRule) {
         next_must_be = Some(true);
 
         let selector = Selector::parse("a").unwrap();
-        let link_ids: Vec<_> = html.select(&selector).filter_map(|e| e.attr("href").map(|href| (e.id(), href == next))).collect();
+        let link_ids: Vec<_> = html
+            .select(&selector)
+            .filter_map(|e| e.attr("href").map(|href| (e.id(), href == next)))
+            .collect();
         for (id, is_next) in link_ids {
             let href = if is_next { GOOD_NEXT } else { BAD_NEXT };
             set_attr(&mut html, id, "href", href);
@@ -49,17 +57,31 @@ fn args() -> (Html, ValidateRule) {
     if no_next {
         next_must_be = Some(false);
     }
-    let mut contain_rules = Vec::with_capacity(no_contain.len() + must_contain.len() + invariant_contain.len());
+    let mut contain_rules =
+        Vec::with_capacity(no_contain.len() + must_contain.len() + invariant_contain.len());
     contain_rules.extend(no_contain.into_iter().map(|x| CaseType::FailOmits(x)));
     contain_rules.extend(must_contain.into_iter().map(|x| CaseType::FailHas(x)));
-    contain_rules.extend(invariant_contain.into_iter().map(|x| CaseType::InvariantHas(x)));
+    contain_rules.extend(
+        invariant_contain
+            .into_iter()
+            .map(|x| CaseType::InvariantHas(x)),
+    );
 
-    let mut regex_rules = Vec::with_capacity(no_match.len() + must_match.len() + invariant_match.len());
+    let mut regex_rules =
+        Vec::with_capacity(no_match.len() + must_match.len() + invariant_match.len());
     regex_rules.extend(no_match.into_iter().map(|x| CaseType::FailOmits(x)));
     regex_rules.extend(must_match.into_iter().map(|x| CaseType::FailHas(x)));
-    regex_rules.extend(invariant_match.into_iter().map(|x| CaseType::InvariantHas(x)));
+    regex_rules.extend(
+        invariant_match
+            .into_iter()
+            .map(|x| CaseType::InvariantHas(x)),
+    );
 
-    let serialization_style = if xml { SerStyle::Xml } else { SerStyle::Markdown };
+    let serialization_style = if xml {
+        SerStyle::Xml
+    } else {
+        SerStyle::Markdown
+    };
     let validate = ValidateRule {
         regex_rules,
         contain_rules,
@@ -115,13 +137,12 @@ struct Args {
     ///
     /// Note: XML is invalid (ie just a fragment)
     #[arg(long, short)]
-    xml: bool
+    xml: bool,
 }
-
 
 fn main() {
     use std::io::prelude::*;
-    use std::path::{PathBuf, Path};
+    use std::path::{Path, PathBuf};
 
     if !AsRef::<Path>::as_ref("tests/generated").is_dir() {
         panic!("could not read tests/generated dir")
@@ -166,7 +187,7 @@ fn main() {
             continue;
         }
         test_name = trimmed.to_owned();
-        break
+        break;
     }
     create_test(&test_name, &validator, &html)
 }
@@ -190,7 +211,11 @@ fn create_test(test_name: &str, validation: &ValidateRule, html: &Html) {
         writeln!(f, "fn generated() {{").unwrap();
         if separate_test_file {
             let in_path = format!("tests/generated/{test_name}.input.html");
-            writeln!(f, r#"    let html: &str = &std::fs::read_to_string("{in_path}").unwrap();"#).unwrap();
+            writeln!(
+                f,
+                r#"    let html: &str = &std::fs::read_to_string("{in_path}").unwrap();"#
+            )
+            .unwrap();
             writeln!(f, r#"    let html: scraper::HTML::parse_document(html);"#).unwrap();
         } else {
             writeln!(f, "    let html = scraper::Html::parse_document(HTML);").unwrap();
@@ -200,14 +225,20 @@ fn create_test(test_name: &str, validation: &ValidateRule, html: &Html) {
         }
         writeln!(f, "}}").unwrap();
         eprintln!("wrote to {test_path}");
-        match std::process::Command::new("rustfmt").arg(&test_path).output() {
+        match std::process::Command::new("rustfmt")
+            .arg(&test_path)
+            .output()
+        {
             Ok(_) => (),
             Err(e) => eprintln!("failed to rustfmt: {e}"),
         }
         eprintln!("content of {test_path}:");
         eprintln!("{}", std::fs::read_to_string(test_path).unwrap());
     }
-    let mut f = std::fs::OpenOptions::new().append(true).open("tests/generated/main.rs").unwrap();
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open("tests/generated/main.rs")
+        .unwrap();
     writeln!(f, "mod {test_name};").unwrap();
 }
 
@@ -226,19 +257,16 @@ enum CaseType<T> {
     FailOmits(T),
 }
 
-impl <T> CaseType<T> {
+impl<T> CaseType<T> {
     fn inner(&self) -> &T {
         match self {
-            CaseType::InvariantHas(r) |
-            CaseType::FailHas(r) |
-            CaseType::FailOmits(r) => r,
+            CaseType::InvariantHas(r) | CaseType::FailHas(r) | CaseType::FailOmits(r) => r,
         }
     }
 
     fn check_is_neg(&self) -> bool {
         match self {
-            CaseType::InvariantHas(_) |
-            CaseType::FailHas(_) => false,
+            CaseType::InvariantHas(_) | CaseType::FailHas(_) => false,
             CaseType::FailOmits(_) => true,
         }
     }
@@ -301,7 +329,10 @@ impl CaseRule for Regex {
     }
 
     fn as_text(&self) -> String {
-        format!(r#"regex_lite::Regex::parse("{}").unwrap().is_match(&t)"#, self.to_string().escape_default())
+        format!(
+            r#"regex_lite::Regex::parse("{}").unwrap().is_match(&t)"#,
+            self.to_string().escape_default()
+        )
     }
 
     fn fail_msg(&self) -> String {
@@ -311,7 +342,7 @@ impl CaseRule for Regex {
 
 /// validation rule - somewhat confusing
 ///
-/// we are validating if the *test case still causes a bug*. 
+/// we are validating if the *test case still causes a bug*.
 ///
 /// # Example
 ///
@@ -333,7 +364,10 @@ impl ValidateRule {
     fn test_code(&self) -> Vec<String> {
         let mut out = Vec::new();
         out.push("#[allow(unused)]".into());
-        out.push(r#"let (ch, next) = wn3::common::Rules::new().parse(&html).expect("failed to parse");"#.into());
+        out.push(
+            r#"let (ch, next) = wn3::common::Rules::new().parse(&html).expect("failed to parse");"#
+                .into(),
+        );
 
         let ser = match self.serialization_style {
             SerStyle::Xml => r#"format!("{ch}")"#,
@@ -357,13 +391,13 @@ impl ValidateRule {
         // This may be able to be avoid by adding a no-cache feature to scraper, but I'd have to
         // look more closely at a lot of code
         let html = Html::parse_document(&html.html());
-        let Ok((ch, next)) = rule.parse(&html) else { return false };
+        let Ok((ch, next)) = rule.parse(&html) else {
+            return false;
+        };
         if let Some(next_must_be) = self.next_must_be {
             match (next_must_be, next) {
-                (true, Some("https://example.com/not_next")) |
-                (false, None) => (),
-                (false, Some(_)) |
-                (true, _) => return false,
+                (true, Some("https://example.com/not_next")) | (false, None) => (),
+                (false, Some(_)) | (true, _) => return false,
             }
         }
 
@@ -374,12 +408,12 @@ impl ValidateRule {
 
         for r in &self.contain_rules {
             if !r.check(&txt) {
-                return false
+                return false;
             };
         }
         for r in &self.regex_rules {
             if !r.check(&txt) {
-                return false
+                return false;
             };
         }
 
@@ -392,15 +426,13 @@ impl ValidateRule {
         // This may be able to be avoid by adding a no-cache feature to scraper, but I'd have to
         // look more closely at a lot of code
         let html = Html::parse_document(&html.html());
-        let Ok((ch, next)) = rule.parse(&html) else { 
+        let Ok((ch, next)) = rule.parse(&html) else {
             return vec!["failed to parse".into()];
         };
         if let Some(next_must_be) = self.next_must_be {
             match (next_must_be, next) {
-                (true, Some("https://example.com/not_next")) |
-                (false, None) => (),
-                (false, Some(_)) |
-                (true, _) => todo!(),
+                (true, Some("https://example.com/not_next")) | (false, None) => (),
+                (false, Some(_)) | (true, _) => todo!(),
             }
         }
 
@@ -411,13 +443,21 @@ impl ValidateRule {
         let mut ret = Vec::new();
         for r in &self.contain_rules {
             if !r.check(&txt) {
-                let neg = if r.check_is_neg() { "negative" } else { "positive" };
+                let neg = if r.check_is_neg() {
+                    "negative"
+                } else {
+                    "positive"
+                };
                 ret.push(format!("failed {neg} {}", r.inner().fail_msg()))
             };
         }
         for r in &self.regex_rules {
             if !r.check(&txt) {
-                let neg = if r.check_is_neg() { "negative" } else { "positive" };
+                let neg = if r.check_is_neg() {
+                    "negative"
+                } else {
+                    "positive"
+                };
                 ret.push(format!("failed {neg} {}", r.inner().fail_msg()))
             };
         }
@@ -426,7 +466,14 @@ impl ValidateRule {
 
     #[track_caller]
     fn assert_valid(&self, html: &Html, rule: &Rules) {
-        assert!(self.is_valid(html, rule), "html:\n{}\n\noutput:\n{}\n\nfailed patterns: {:#?}", html.html(), rule.parse(html).map_or_else(|_| "FAILED TO PARSE".into(), |(ch, _)| format!("{ch:#}")), self.invalid_reasons(html, rule))
+        assert!(
+            self.is_valid(html, rule),
+            "html:\n{}\n\noutput:\n{}\n\nfailed patterns: {:#?}",
+            html.html(),
+            rule.parse(html)
+                .map_or_else(|_| "FAILED TO PARSE".into(), |(ch, _)| format!("{ch:#}")),
+            self.invalid_reasons(html, rule)
+        )
     }
 }
 
@@ -444,14 +491,24 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
     loop {
         // println!("========================");
         // println!("{}", html.html());
-        let Some(el) = html.tree.root().descendants().find(|n| !required.contains(&n.id()) && !n.value().is_doctype()) else { break };
+        let Some(el) = html
+            .tree
+            .root()
+            .descendants()
+            .find(|n| !required.contains(&n.id()) && !n.value().is_doctype())
+        else {
+            break;
+        };
         let id = el.id();
         let next_sibling = el.next_sibling().map(|e| e.id());
-        let parent = el.parent().map(|e| e.id()).expect("all removable nodes have parents");
+        let parent = el
+            .parent()
+            .map(|e| e.id())
+            .expect("all removable nodes have parents");
         // let before = html.html();
         html.remove_from_parent(&id);
         if validation.is_valid(&html, rule) {
-            continue
+            continue;
         } else {
             // eprintln!("need element {:?}", html.tree.get(id).unwrap().value());
         }
@@ -461,7 +518,10 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
             Some(s) => html.append_before_sibling(&s, NodeOrText::AppendNode(id)),
         }
         // let after_restore = html.html();
-        debug_assert_eq!(html.tree.get(id).unwrap().parent().map(|n| n.id()), Some(parent));
+        debug_assert_eq!(
+            html.tree.get(id).unwrap().parent().map(|n| n.id()),
+            Some(parent)
+        );
         // assert_eq!(before, after_restore);
     }
     eprintln!("tree elimination complete");
@@ -474,7 +534,13 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
     let mut children = Vec::new();
     // unwrapping nodes that are unneeded
     loop {
-        let Some(el) = html.tree.root().descendants().find(|n| !required.contains(&n.id()) && !n.value().is_doctype() && n.has_children()) else { break };
+        let Some(el) =
+            html.tree.root().descendants().find(|n| {
+                !required.contains(&n.id()) && !n.value().is_doctype() && n.has_children()
+            })
+        else {
+            break;
+        };
         let id = el.id();
         let parent = el.parent().unwrap().id();
         let next_sibling = el.next_sibling().map(|e| e.id());
@@ -486,7 +552,7 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
         html.remove_from_parent(&id);
         if validation.is_valid(&html, rule) {
             // eprintln!("don't need element {:?}", html.tree.get(id).unwrap().value());
-            continue
+            continue;
         }
         match next_sibling {
             None => html.append(&parent, NodeOrText::AppendNode(id)),
@@ -500,9 +566,21 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
     eprintln!("unwrapping complete");
     assert!(validation.is_valid(&html, rule), "");
 
-    let ids: Vec<_> = html.root_element().descendent_elements().filter(|e| e.value().classes().count() > 0).map(|e| e.id()).collect();
+    let ids: Vec<_> = html
+        .root_element()
+        .descendent_elements()
+        .filter(|e| e.value().classes().count() > 0)
+        .map(|e| e.id())
+        .collect();
     for id in ids {
-        let el = html.tree.get(id).unwrap().value().as_element().unwrap().clone();
+        let el = html
+            .tree
+            .get(id)
+            .unwrap()
+            .value()
+            .as_element()
+            .unwrap()
+            .clone();
         let qualname = QualName::new(None, ns!(), LocalName::from("class"));
         let mut classes = HashSet::new();
         classes.extend(el.classes());
@@ -510,7 +588,18 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
             let node = &mut html.tree.get_mut(id).unwrap();
             let node = node.value();
             let Node::Element(e) = node else { panic!() };
-            e.attrs.insert(qualname.clone(), classes.iter().map(|&c| c).filter(|&c| c != class).collect::<Vec<_>>().join(" ").into()).unwrap();
+            e.attrs
+                .insert(
+                    qualname.clone(),
+                    classes
+                        .iter()
+                        .map(|&c| c)
+                        .filter(|&c| c != class)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .into(),
+                )
+                .unwrap();
             if validation.is_valid(&html, rule) {
                 classes.remove(class);
             }
@@ -521,16 +610,32 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
         if classes.is_empty() {
             e.attrs.get_mut(&qualname).map(|c| *c = "".into());
         } else {
-            *e.attrs.get_mut(&qualname).unwrap() = classes.iter().map(|&c| c).collect::<Vec<_>>().join(" ").into();
+            *e.attrs.get_mut(&qualname).unwrap() = classes
+                .iter()
+                .map(|&c| c)
+                .collect::<Vec<_>>()
+                .join(" ")
+                .into();
         }
     }
     eprintln!("class stripping complete");
     validation.assert_valid(&html, rule);
 
     // removing unneeded attributes
-    let ids: Vec<_> = html.root_element().descendent_elements().map(|e| e.id()).collect();
+    let ids: Vec<_> = html
+        .root_element()
+        .descendent_elements()
+        .map(|e| e.id())
+        .collect();
     for id in ids {
-        let el = html.tree.get(id).unwrap().value().as_element().unwrap().clone();
+        let el = html
+            .tree
+            .get(id)
+            .unwrap()
+            .value()
+            .as_element()
+            .unwrap()
+            .clone();
         for attr in el.attrs {
             let node = &mut html.tree.get_mut(id).unwrap();
             let node = node.value();
@@ -538,7 +643,7 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
             let prev = e.attrs.remove(&attr.0).unwrap();
             if validation.is_valid(&html, rule) {
                 // eprintln!(r#"attr {}="{prev}" is uneeded"#, attr.0.local);
-                continue
+                continue;
             }
             let node = &mut html.tree.get_mut(id).unwrap();
             let node = node.value();
@@ -560,12 +665,10 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
     //
     // Currently, the best way to do this is with `sed` after we're done
 
-
     validation.assert_valid(&html, rule);
 
     html
 }
-
 
 #[cfg(test)]
 mod tests {

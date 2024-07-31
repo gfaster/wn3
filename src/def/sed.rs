@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use regex_lite::{NoExpand, Regex};
 use serde::Deserialize;
 
-
 #[derive(Deserialize, Debug, Clone)]
 #[serde(try_from = "String")]
 pub struct SedLite {
@@ -56,7 +55,9 @@ impl std::fmt::Display for SedLiteError {
         match &self.0 {
             SedLiteErrorInner::RegexParseError(e) => e.fmt(f),
             SedLiteErrorInner::MissingLeadingS => "Missing leading 's', search Vim help :s".fmt(f),
-            SedLiteErrorInner::IncorrectSlash => "Missing or incorrect '/', note escaping not yet supported".fmt(f),
+            SedLiteErrorInner::IncorrectSlash => {
+                "Missing or incorrect '/', note escaping not yet supported".fmt(f)
+            }
         }
     }
 }
@@ -72,21 +73,22 @@ impl TryFrom<&str> for SedLite {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let Some(value) = value.strip_prefix("s") else {
-            return Err(SedLiteError(SedLiteErrorInner::MissingLeadingS))
+            return Err(SedLiteError(SedLiteErrorInner::MissingLeadingS));
         };
         let Some(value) = value.strip_prefix("/") else {
-            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash))
+            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash));
         };
         let Some(value) = value.strip_suffix("/") else {
-            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash))
+            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash));
         };
         let Some((find, replace)) = value.split_once('/') else {
-            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash))
+            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash));
         };
         if replace.contains('/') {
-            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash))
+            return Err(SedLiteError(SedLiteErrorInner::IncorrectSlash));
         }
-        let find = Regex::new(find).map_err(|e| SedLiteError(SedLiteErrorInner::RegexParseError(e)))?;
+        let find =
+            Regex::new(find).map_err(|e| SedLiteError(SedLiteErrorInner::RegexParseError(e)))?;
         Ok(SedLite {
             find,
             replace: replace.into(),

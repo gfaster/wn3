@@ -1,4 +1,4 @@
-use log::{Record, Level, Metadata};
+use log::{Level, Metadata, Record};
 
 pub struct SimpleLogger;
 
@@ -12,7 +12,7 @@ impl log::Log for SimpleLogger {
             let module = record.module_path().unwrap_or("unknown");
             if module.starts_with("selectors") || module.starts_with("html5ever") {
                 if record.level() > Level::Info {
-                    return
+                    return;
                 }
             }
             if record.target() == "progress" {
@@ -34,11 +34,10 @@ impl log::Log for SimpleLogger {
     fn flush(&self) {}
 }
 
-use log::{SetLoggerError, LevelFilter};
+use log::{LevelFilter, SetLoggerError};
 
 static LOGGER: SimpleLogger = SimpleLogger;
 
 pub fn init() -> Result<(), SetLoggerError> {
-    log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Info))
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
 }

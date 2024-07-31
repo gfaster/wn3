@@ -1,12 +1,24 @@
-use std::{collections::hash_map::Entry, io::{self, prelude::*}, rc::Rc};
 use ahash::{HashMap, HashMapExt};
 use anyhow::{Context, Result};
 use fetch::FetchContext;
 use log::error;
+use std::{
+    collections::hash_map::Entry,
+    io::{self, prelude::*},
+    rc::Rc,
+};
 use url::Url;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
-use crate::{chapter::Chapter, epub::{package::{ManifestItem, ManifestProperties}, xml::XmlSink}, html_writer::EscapeBody, image::{Image, ImageId, ResolvedImage}};
+use crate::{
+    chapter::Chapter,
+    epub::{
+        package::{ManifestItem, ManifestProperties},
+        xml::XmlSink,
+    },
+    html_writer::EscapeBody,
+    image::{Image, ImageId, ResolvedImage},
+};
 
 use super::package::{ContributorRole, IdentifierType, OpfBuilder};
 
@@ -35,9 +47,14 @@ impl<'a> EpubBuilder<'a> {
         match entry {
             Entry::Occupied(o) => {
                 self.cover = Some(Rc::clone(o.get()));
-            },
+            }
             Entry::Vacant(e) => {
-                let (ty, bytes) = cx.fetch(&Url::parse(img.url()).with_context(|| format!("{} is invalid url", img.url()))?).with_context(|| format!("failed fetching {}", img.url()))?;
+                let (ty, bytes) = cx
+                    .fetch(
+                        &Url::parse(img.url())
+                            .with_context(|| format!("{} is invalid url", img.url()))?,
+                    )
+                    .with_context(|| format!("failed fetching {}", img.url()))?;
                 let img = Rc::new(img.resolve_with(ty, bytes));
                 self.cover = Some(Rc::clone(&img));
                 e.insert(img);
@@ -56,7 +73,8 @@ impl<'a> EpubBuilder<'a> {
     }
 
     pub fn add_chapter(&mut self, chapter: Chapter<'a>) -> &mut Self {
-        self.additional_resources.extend(chapter.rsc.iter().map(|r| (r.id(), Rc::clone(r))));
+        self.additional_resources
+            .extend(chapter.rsc.iter().map(|r| (r.id(), Rc::clone(r))));
         self.chapters.push(chapter);
         self
     }
@@ -67,16 +85,24 @@ impl<'a> EpubBuilder<'a> {
     }
 
     pub fn add_author(&mut self, author: impl Into<Box<str>>) -> &mut Self {
-        self.opf.contributors.push((ContributorRole::Author, author.into()));
+        self.opf
+            .contributors
+            .push((ContributorRole::Author, author.into()));
         self
     }
 
     pub fn add_translator(&mut self, translator: impl Into<Box<str>>) -> &mut Self {
-        self.opf.contributors.push((ContributorRole::Translator, translator.into()));
+        self.opf
+            .contributors
+            .push((ContributorRole::Translator, translator.into()));
         self
     }
 
-    pub fn add_contributor(&mut self, role: ContributorRole, creator: impl Into<Box<str>>) -> &mut Self {
+    pub fn add_contributor(
+        &mut self,
+        role: ContributorRole,
+        creator: impl Into<Box<str>>,
+    ) -> &mut Self {
         self.opf.contributors.push((role, creator.into()));
         self
     }
@@ -86,16 +112,20 @@ impl<'a> EpubBuilder<'a> {
         self
     }
 
-    pub fn add_identifier(&mut self, ty: IdentifierType, identifier: impl Into<Box<str>>) -> &mut Self {
+    pub fn add_identifier(
+        &mut self,
+        ty: IdentifierType,
+        identifier: impl Into<Box<str>>,
+    ) -> &mut Self {
         self.opf.add_identifier(ty, identifier.into());
         self
     }
 
-    /// sorts identifiers to use the best option for the unique id. 
+    /// sorts identifiers to use the best option for the unique id.
     ///
     /// If more identifiers are added later, this method must be called again for new identifier to
     /// have a chance at being used.
-    /// 
+    ///
     /// This uses a stable sort so that duplicate identifier types are kept in the order they were
     /// added in
     pub fn sort_identifiers(&mut self) -> &mut Self {
@@ -108,8 +138,10 @@ impl<'a> EpubBuilder<'a> {
         assert!(!self.chapters.is_empty());
 
         let mut zip = ZipWriter::new(w);
-        let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        let compressed = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let stored =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let compressed =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         zip.start_file("mimetype", stored)?;
         zip.write_all(b"application/epub+zip")?;
         zip.add_directory("EPUB", stored)?;
@@ -122,19 +154,22 @@ impl<'a> EpubBuilder<'a> {
         zip.write_all(CONTAINER_XML.as_bytes())?;
 
         // chunks here are just splitting the chapters into small enough files
-        let chunks: Vec<_> = self.chapters.chunk_by({
-            let mut size = self.chapters[0].size();
-            move |_l, r| {
-                let rsz = r.size();
-                if size >= self.chunk_size {
-                    size = rsz;
-                    false
-                } else {
-                    size += rsz;
-                    true
+        let chunks: Vec<_> = self
+            .chapters
+            .chunk_by({
+                let mut size = self.chapters[0].size();
+                move |_l, r| {
+                    let rsz = r.size();
+                    if size >= self.chunk_size {
+                        size = rsz;
+                        false
+                    } else {
+                        size += rsz;
+                        true
+                    }
                 }
-            }
-        }).collect();
+            })
+            .collect();
 
         self.opf.manifest.push(ManifestItem::new("css/epub.css"));
 
@@ -142,7 +177,9 @@ impl<'a> EpubBuilder<'a> {
         for (i, chunk) in chunks.iter().enumerate() {
             zip.start_file(format!("EPUB/chunk_{i}.xhtml"), compressed)?;
             write_chunk(&mut zip, chunk)?;
-            self.opf.manifest.push(ManifestItem::new(format!("chunk_{i}.xhtml")));
+            self.opf
+                .manifest
+                .push(ManifestItem::new(format!("chunk_{i}.xhtml")));
         }
 
         for (_id, rsc) in self.additional_resources {
@@ -156,7 +193,6 @@ impl<'a> EpubBuilder<'a> {
             zip.write_all(&rsc.data)?;
         }
 
-
         let spec = self.opf.finish().map_err(|e| error!("{e:?}")).unwrap();
 
         zip.start_file("EPUB/nav.xhtml", compressed)?;
@@ -164,7 +200,6 @@ impl<'a> EpubBuilder<'a> {
 
         zip.start_file("EPUB/css/epub.css", compressed)?;
         zip.write_all(include_str!("../../epub.css").as_bytes())?;
-
 
         zip.start_file("EPUB/package.opf", stored)?;
         spec.write(&mut zip)?;
@@ -192,12 +227,15 @@ const CONTAINER_XML: &str = r#"<?xml version="1.0"?>
 
 fn write_nav(w: impl Write, title: &str, org: &[&[Chapter]]) -> io::Result<()> {
     let mut toc = XmlSink::new_xhtml(w)?;
-    let mut html = toc.mkel("html", [
-        ("xmlns", "http://www.w3.org/1999/xhtml"),
-        ("xmlns:epub", "http://www.idpf.org/2007/ops"),
-        ("xml:lang", "en"),
-        ("lang", "en"),
-    ])?;
+    let mut html = toc.mkel(
+        "html",
+        [
+            ("xmlns", "http://www.w3.org/1999/xhtml"),
+            ("xmlns:epub", "http://www.idpf.org/2007/ops"),
+            ("xml:lang", "en"),
+            ("lang", "en"),
+        ],
+    )?;
     {
         let mut head = html.mkel("head", [])?;
         head.mkel("title", [])?.write_field("Table of Contents")?;
@@ -209,7 +247,15 @@ fn write_nav(w: impl Write, title: &str, org: &[&[Chapter]]) -> io::Result<()> {
     let mut ol = nav.mkel("ol", [])?;
     for (chunk_idx, &chunk) in org.iter().enumerate() {
         for chapter in chunk {
-            ol.mkel("li", [])?.mkel("a", [("href", &*format!("chunk_{chunk_idx}.xhtml#{id}", id = chapter.id()))])?.write_field(EscapeBody(chapter.title()))?;
+            ol.mkel("li", [])?
+                .mkel(
+                    "a",
+                    [(
+                        "href",
+                        &*format!("chunk_{chunk_idx}.xhtml#{id}", id = chapter.id()),
+                    )],
+                )?
+                .write_field(EscapeBody(chapter.title()))?;
         }
     }
     drop(ol);
@@ -222,26 +268,34 @@ fn write_nav(w: impl Write, title: &str, org: &[&[Chapter]]) -> io::Result<()> {
 fn write_chunk(w: impl Write, chunk: &[Chapter]) -> io::Result<()> {
     let mut doc = XmlSink::new_xhtml(w)?;
     {
-        let mut html = doc.mkel("html", [
-                ("xmlns", "http://www.w3.org/1999/xhtml"), 
-                ("xmlns:epub", "http://www.idpf.org/2007/ops"), 
+        let mut html = doc.mkel(
+            "html",
+            [
+                ("xmlns", "http://www.w3.org/1999/xhtml"),
+                ("xmlns:epub", "http://www.idpf.org/2007/ops"),
                 ("lang", "en"),
                 ("xml:lang", "en"),
-                ("epub:prefix", "z3998: http://www.daisy.org/z3998/2012/vocab/structure/#"),
-        ])?;
+                (
+                    "epub:prefix",
+                    "z3998: http://www.daisy.org/z3998/2012/vocab/structure/#",
+                ),
+            ],
+        )?;
         {
             let mut head = html.mkel("head", [])?;
-            head.mkel_selfclosed("link", [
-                ("href", "css/epub.css"),
-                ("type", "text/epub.css"),
-                ("rel", "stylesheet")
-            ])?;
+            head.mkel_selfclosed(
+                "link",
+                [
+                    ("href", "css/epub.css"),
+                    ("type", "text/epub.css"),
+                    ("rel", "stylesheet"),
+                ],
+            )?;
             head.mkel("title", [])?.write_field("chunk")?;
         }
         let mut body = html.mkel("body", [])?;
         for chapter in chunk {
-            body
-                .mkel("section", [("id", &*chapter.id().to_string())])?
+            body.mkel("section", [("id", &*chapter.id().to_string())])?
                 .write_field(chapter)?;
         }
     }

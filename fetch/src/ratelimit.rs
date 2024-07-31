@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, ops::DerefMut, sync::{Arc, Mutex as StdMutex}, time::{Duration, Instant}};
+use std::{
+    collections::BTreeMap,
+    ops::DerefMut,
+    sync::{Arc, Mutex as StdMutex},
+    time::{Duration, Instant},
+};
 
 use log::info;
 
@@ -9,10 +14,9 @@ type Rls = StdMutex<BTreeMap<Box<str>, RateLimit>>;
 static LIMITS: Rls = Rls::new(BTreeMap::new());
 
 #[derive(Clone)]
-struct RateLimit { 
+struct RateLimit {
     interval: Arc<StdMutex<(Instant, Duration)>>,
 }
-
 
 impl RateLimit {
     pub fn new(period: Duration) -> Self {
@@ -53,7 +57,4 @@ pub fn wait_your_turn(s: &str, default_period: Duration) {
 }
 
 #[cfg(test)]
-mod tests {
-    
-
-}
+mod tests {}

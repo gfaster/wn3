@@ -19,18 +19,14 @@ pub enum MediaType {
 }
 
 impl MediaType {
-
     pub fn new(id: i32) -> Self {
         Self::try_new(id).expect("valid id")
     }
 
     pub fn is_image(self) -> bool {
-        matches!(self,
-            MediaType::Png
-            | MediaType::Jpg
-            | MediaType::Svg
-            | MediaType::Gif
-            | MediaType::Webp
+        matches!(
+            self,
+            MediaType::Png | MediaType::Jpg | MediaType::Svg | MediaType::Gif | MediaType::Webp
         )
     }
 
@@ -64,7 +60,7 @@ impl MediaType {
             "image/gif" => MediaType::Gif,
             "image/webp" => MediaType::Webp,
             "text/html" => MediaType::Html,
-            _ => panic!("unknown type {s:?}")
+            _ => panic!("unknown type {s:?}"),
         }
     }
 
@@ -79,7 +75,7 @@ impl MediaType {
             "gif" => MediaType::Gif,
             "webp" => MediaType::Webp,
             "html" => MediaType::Html,
-            _ => return None
+            _ => return None,
         };
         Some(ret)
     }
@@ -122,43 +118,54 @@ impl MediaType {
     }
 }
 
-
 pub struct ObjectCache {
     conn: Connection,
 }
 
 impl ObjectCache {
     pub fn new(conn: Connection) -> Result<Self> {
-        conn.execute_batch("
+        conn.execute_batch(
+            "
 CREATE TABLE IF NOT EXISTS cache_entries (id INTEGER PRIMARY KEY,
                             url TEXT KEY,
                             type INTEGER,
                             content BLOB);
-")?;
+",
+        )?;
         Ok(ObjectCache { conn })
     }
 
     pub fn set(&self, key: &str, val: &[u8], ty: MediaType) -> Result<()> {
-        let mut stmt = self.conn.prepare_cached("INSERT INTO cache_entries (url, type, content) VALUES (?1, ?2, ?3)")?;
+        let mut stmt = self
+            .conn
+            .prepare_cached("INSERT INTO cache_entries (url, type, content) VALUES (?1, ?2, ?3)")?;
         stmt.execute((key, ty as i64, val))?;
         Ok(())
     }
 
     pub fn get<'a>(&'a self, key: &str) -> Result<Option<(MediaType, Blob<'a>)>> {
-        let mut stmt = self.conn.prepare_cached("SELECT id, type FROM cache_entries WHERE url=?1 LIMIT 1")?;
-        let id: Option<(i64, i64)> = stmt.query_row([key], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        }).optional()?;
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id, type FROM cache_entries WHERE url=?1 LIMIT 1")?;
+        let id: Option<(i64, i64)> = stmt
+            .query_row([key], |row| Ok((row.get(0)?, row.get(1)?)))
+            .optional()?;
         let Some((id, ty)) = id else { return Ok(None) };
         let ty = MediaType::new(ty as i32);
-        let blob = self.conn.blob_open(rusqlite::DatabaseName::Main, "cache_entries", "content", id, true)?;
+        let blob = self.conn.blob_open(
+            rusqlite::DatabaseName::Main,
+            "cache_entries",
+            "content",
+            id,
+            true,
+        )?;
         Ok(Some((ty, blob)))
     }
 
     #[allow(dead_code)]
     pub fn get_string(&self, key: &str) -> Result<Option<(MediaType, String)>> {
         let Some((ty, mut blob)) = self.get(key)? else {
-            return Ok(None)
+            return Ok(None);
         };
         let mut buf = String::with_capacity(blob.len());
         blob.read_to_string(&mut buf).unwrap();
@@ -168,7 +175,7 @@ CREATE TABLE IF NOT EXISTS cache_entries (id INTEGER PRIMARY KEY,
     #[allow(dead_code)]
     pub fn get_bytes(&self, key: &str) -> Result<Option<(MediaType, Bytes)>> {
         let Some((ty, mut blob)) = self.get(key)? else {
-            return Ok(None)
+            return Ok(None);
         };
         let mut buf = vec![0; blob.len()];
         blob.read_exact(&mut buf).unwrap();
@@ -178,8 +185,8 @@ CREATE TABLE IF NOT EXISTS cache_entries (id INTEGER PRIMARY KEY,
 
 #[cfg(test)]
 mod tests {
-    use std::io::prelude::*;
     use super::*;
+    use std::io::prelude::*;
 
     fn new_cache() -> ObjectCache {
         ObjectCache::new(rusqlite::Connection::open_in_memory().unwrap()).unwrap()
@@ -208,7 +215,9 @@ mod tests {
     fn use_url() {
         let cache = new_cache();
         assert!(cache.get("https://example.com").unwrap().is_none());
-        cache.set("https://example.com", b"asdfasdf", MediaType::Html).unwrap();
+        cache
+            .set("https://example.com", b"asdfasdf", MediaType::Html)
+            .unwrap();
         let res = cache.get_string("https://example.com").unwrap().unwrap();
         assert_eq!(res.1, "asdfasdf");
     }

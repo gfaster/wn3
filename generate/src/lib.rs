@@ -1,10 +1,10 @@
 // use scraper::{Html, Selector};
 
 pub mod chapter;
-pub use chapter::{ChapterBuilder, Chapter};
+pub use chapter::{Chapter, ChapterBuilder};
 mod html_writer;
-mod util;
 pub mod image;
+mod util;
 
 pub mod epub;
 pub use epub::EpubBuilder;

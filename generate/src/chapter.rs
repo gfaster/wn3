@@ -2,7 +2,10 @@ use ahash::{HashMap, HashMapExt};
 use anyhow::{ensure, Context};
 use url::Url;
 
-use crate::{html_writer::*, image::{Image, ImageId, ResolvedImage}};
+use crate::{
+    html_writer::*,
+    image::{Image, ImageId, ResolvedImage},
+};
 use std::{borrow::Cow, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
 
 // struct ImageDesc<'a> {
@@ -46,20 +49,40 @@ impl SpanStyleEl {
 impl From<SpanStyleEl> for SpanStyle {
     fn from(value: SpanStyleEl) -> Self {
         match value {
-            SpanStyleEl::Bold => SpanStyle {bold: true, ..SpanStyle::none()},
-            SpanStyleEl::Italic => SpanStyle {italic: true, ..SpanStyle::none()},
-            SpanStyleEl::Footnote => SpanStyle {footnote: true, ..SpanStyle::none()},
+            SpanStyleEl::Bold => SpanStyle {
+                bold: true,
+                ..SpanStyle::none()
+            },
+            SpanStyleEl::Italic => SpanStyle {
+                italic: true,
+                ..SpanStyle::none()
+            },
+            SpanStyleEl::Footnote => SpanStyle {
+                footnote: true,
+                ..SpanStyle::none()
+            },
         }
     }
 }
 
 impl SpanStyle {
     pub const fn none() -> Self {
-        SpanStyle { bold: false, italic: false, footnote: false }
+        SpanStyle {
+            bold: false,
+            italic: false,
+            footnote: false,
+        }
     }
 
     pub const fn is_none(self) -> bool {
-        matches!(self, SpanStyle { bold: false, italic: false, footnote: false })
+        matches!(
+            self,
+            SpanStyle {
+                bold: false,
+                italic: false,
+                footnote: false
+            }
+        )
     }
 
     pub fn el_iter(self) -> impl DoubleEndedIterator<Item = SpanStyleEl> {
@@ -67,7 +90,9 @@ impl SpanStyle {
             self.bold.then_some(SpanStyleEl::Bold),
             self.italic.then_some(SpanStyleEl::Italic),
             self.footnote.then_some(SpanStyleEl::Footnote),
-        ].into_iter().flatten()
+        ]
+        .into_iter()
+        .flatten()
     }
 
     pub const fn bold() -> Self {
@@ -193,7 +218,7 @@ impl Display for MajorElement<'_> {
                 f.write_str(prefix)?;
                 let disp = elms.disp_join("");
                 disp.fmt(f)
-            },
+            }
             (MajorElement::Paragraph { style, elms }, false) => {
                 let tag = match style.mode {
                     ParagraphMode::Normal => "p",
@@ -201,7 +226,7 @@ impl Display for MajorElement<'_> {
                 };
                 let disp = TagSurround::new(tag, elms.disp_join(""));
                 disp.fmt(f)
-            },
+            }
             (MajorElement::ImageResolved(i), _) => i.fmt(f),
             (MajorElement::HorizLine, true) => "---".fmt(f),
             (MajorElement::HorizLine, false) => "<hr />".fmt(f),
@@ -211,11 +236,13 @@ impl Display for MajorElement<'_> {
                 } else {
                     writeln!(f, "### ◇ {s} ◇", s = EscapeMd(s))
                 }
-            },
+            }
             (MajorElement::SceneSep(s), false) => {
                 let s = EscapeBody(s);
-                format_args!("◇ {s} ◇").surround(r#"<h3 class="scene-sep">"#, "</h3>").fmt(f)
-            },
+                format_args!("◇ {s} ◇")
+                    .surround(r#"<h3 class="scene-sep">"#, "</h3>")
+                    .fmt(f)
+            }
             (MajorElement::Image(_), true) => todo!(),
             (MajorElement::Image(_), false) => todo!(),
         }
@@ -280,7 +307,7 @@ impl Display for InlineElement<'_> {
             match self {
                 Self::EnableStyles(s) | Self::DisableStyles(s) if s.is_none() => {
                     unreachable!("empty style transition is invalid and should never be created")
-                },
+                }
                 Self::EnableStyles(s) => {
                     for el in s.el_iter() {
                         write!(f, "{}", el.open())?
@@ -299,7 +326,7 @@ impl Display for InlineElement<'_> {
                 }
                 InlineElement::LineFeed => {
                     writeln!(f, "<br />")?;
-                },
+                }
             };
             Ok(())
         }
@@ -348,9 +375,18 @@ impl Chapter<'_> {
 
     /// approximate size in bytes - tries to be an overestimate
     pub fn size(&self) -> usize {
-        self.p.iter().filter_map(|e| {
-            if let MajorElement::Paragraph { elms, .. } = e { Some(elms) } else { None }
-        }).map(|elms| elms.iter().map(|e| e.size()).sum::<usize>() + 8).sum::<usize>() + 64
+        self.p
+            .iter()
+            .filter_map(|e| {
+                if let MajorElement::Paragraph { elms, .. } = e {
+                    Some(elms)
+                } else {
+                    None
+                }
+            })
+            .map(|elms| elms.iter().map(|e| e.size()).sum::<usize>() + 8)
+            .sum::<usize>()
+            + 64
     }
 }
 
@@ -369,7 +405,6 @@ pub struct ChapterBuilder<'a> {
     current_p: Vec<InlineElement<'a>>,
 
     complete_p: Vec<MajorElement<'a>>,
-
     // referenced_resources: HashSet<&'a str>,
 }
 
@@ -481,7 +516,8 @@ impl<'a> ChapterBuilder<'a> {
         }
         let spans = std::mem::take(&mut self.current_p);
         let style = std::mem::take(&mut self.paragraph_style);
-        self.complete_p.push(MajorElement::Paragraph { elms: spans, style });
+        self.complete_p
+            .push(MajorElement::Paragraph { elms: spans, style });
         self
     }
 
@@ -517,7 +553,8 @@ impl<'a> ChapterBuilder<'a> {
     /// make sure we have all the images loaded
     pub fn resolve_resources(&mut self, store: &fetch::FetchContext) -> anyhow::Result<()> {
         // PERF: we don't deduplicate here, but probably should?
-        self.resources_resolved.reserve(self.resources_unresolved.len());
+        self.resources_resolved
+            .reserve(self.resources_unresolved.len());
         for (url, img) in std::mem::take(&mut self.resources_unresolved) {
             if self.resources_resolved.contains_key(&img.id()) {
                 continue;
@@ -530,9 +567,15 @@ impl<'a> ChapterBuilder<'a> {
         }
         // TODO: don't merge same url -> multiple alts
         for el in &mut self.complete_p {
-            let MajorElement::Image(id) = el else { continue };
+            let MajorElement::Image(id) = el else {
+                continue;
+            };
             *el = MajorElement::ImageResolved(
-            self.resources_resolved.get(id).context("image was added without registration")?.clone());
+                self.resources_resolved
+                    .get(id)
+                    .context("image was added without registration")?
+                    .clone(),
+            );
         }
         Ok(())
     }
@@ -540,21 +583,30 @@ impl<'a> ChapterBuilder<'a> {
     /// make sure we have all the images loaded - won't touch network
     pub fn resolve_resources_local(&mut self, store: &fetch::FetchContext) -> anyhow::Result<()> {
         // PERF: we don't deduplicate here, but probably should?
-        self.resources_resolved.reserve(self.resources_unresolved.len());
+        self.resources_resolved
+            .reserve(self.resources_unresolved.len());
         for (url, img) in std::mem::take(&mut self.resources_unresolved) {
             if self.resources_resolved.contains_key(&img.id()) {
                 continue;
             }
-            let (ty, bytes) = store.fetch_local(&url).context("failed fetching resource")?;
+            let (ty, bytes) = store
+                .fetch_local(&url)
+                .context("failed fetching resource")?;
             ensure!(ty.is_image(), "resolved type {ty:?} is not an image");
             let img = img.resolve_with(ty, bytes);
             self.resources_resolved.insert(img.id(), Rc::new(img));
         }
         // TODO: don't merge same url -> multiple alts
         for el in &mut self.complete_p {
-            let MajorElement::Image(id) = el else { continue };
+            let MajorElement::Image(id) = el else {
+                continue;
+            };
             *el = MajorElement::ImageResolved(
-            self.resources_resolved.get(id).context("image was added without registration")?.clone());
+                self.resources_resolved
+                    .get(id)
+                    .context("image was added without registration")?
+                    .clone(),
+            );
         }
         Ok(())
     }
