@@ -24,10 +24,7 @@ impl MediaType {
     }
 
     pub fn is_image(self) -> bool {
-        matches!(
-            self,
-            MediaType::Png | MediaType::Jpg | MediaType::Svg | MediaType::Gif | MediaType::Webp
-        )
+        matches!( self, MediaType::Png | MediaType::Jpg | MediaType::Svg | MediaType::Gif | MediaType::Webp)
     }
 
     pub fn try_new(id: i32) -> Option<Self> {
