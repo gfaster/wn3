@@ -43,7 +43,7 @@ enum Op {
 #[serde(try_from = "String")]
 pub struct Sed {
     op: Op,
-    sel: Option<Selector>,
+    sel: Option<(Selector, Box<str>)>,
     reg: Option<Regex>,
 }
 
@@ -78,6 +78,10 @@ impl Sed {
         matches!(self.op, Op::PrintAll | Op::Print)
     }
 
+    fn sel(&self) -> Option<&Selector> {
+        self.sel.as_ref().map(|(x, _)| x)
+    }
+
     /// prints recursively, implicitly checks op
     pub fn print(&self, el: &ElementRef) {
         if !self.is_print_any() {
@@ -89,7 +93,7 @@ impl Sed {
         match &self.op {
             Op::Print => {
                 let reg = self.reg.as_ref().unwrap();
-                if let Some(sel) = &self.sel {
+                if let Some(sel) = &self.sel() {
                     el.select(sel)
                         .flat_map(|e| e.text())
                         .flat_map(|t| reg.captures_iter(t))
@@ -107,7 +111,7 @@ impl Sed {
 
     /// calls `f` on all elements that selector matches, or on all elements if there is no selector
     fn select_el(&self, el: &ElementRef, mut f: impl FnMut(ElementRef)) {
-        if let Some(sel) = &self.sel {
+        if let Some(sel) = &self.sel() {
             el.select(sel).for_each(|el| f(el))
         } else {
             el.descendent_elements().for_each(|el| f(el))
@@ -144,7 +148,7 @@ impl Sed {
     /// If an element is a css match, then all it's children are too
     #[must_use]
     pub fn is_css_match(&self, el: &ElementRef) -> bool {
-        if let Some(sel) = &self.sel {
+        if let Some(sel) = &self.sel() {
             return sel.matches(el);
         }
         true
@@ -156,7 +160,7 @@ impl Sed {
     /// If an element is a css match, then all it's children are too
     #[must_use]
     pub fn parent_css_match<'a>(&self, el: &ElementRef<'a>) -> Option<ElementRef<'a>> {
-        if let Some(sel) = &self.sel {
+        if let Some(sel) = &self.sel() {
             for el in el.ancestors().flat_map(ElementRef::wrap) {
                 if sel.matches(&el) {
                     return Some(el);
@@ -248,7 +252,10 @@ fn parse_sed(s: &str) -> SedParseRes {
         let sel_str = &s[start..endi];
         ensure!(!sel_str.trim().is_empty(), "cannot use empty selector");
         debug!("parsing selector `{sel_str}`");
-        sel = Some(Selector::parse(sel_str).map_err(|e| anyhow!("{e}"))?);
+        sel = Some((
+            Selector::parse(sel_str).map_err(|e| anyhow!("{e}"))?,
+            sel_str.into(),
+        ));
 
         // note that if there is nothing more after this, then start is two past the end
         start = endi + 1;
@@ -308,6 +315,28 @@ fn parse_sed(s: &str) -> SedParseRes {
     let ret = Sed { op, sel, reg };
 
     Ok(ret)
+}
+
+impl std::fmt::Display for Sed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let op = match self.op {
+            Op::Delete => 'd',
+            Op::Print => 'p',
+            Op::PrintAll => 'P',
+            Op::Replace(_) => 's',
+        };
+        write!(f, "{op}")?;
+        if let Some((_, s)) = &self.sel {
+            write!(f, ";{s}")?;
+        }
+        if let Some(r) = &self.reg {
+            write!(f, "/{}/", r.as_str())?;
+        }
+        if let Op::Replace(s) = &self.op {
+            write!(f, "{s}/")?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -454,5 +483,17 @@ mod tests {
         case("TLN asdf", "s/TLN //", "asdf");
         case("TLN asdf", "s/TLN.*$//", "");
         case(" TLN", "s/^TLN//", " TLN");
+    }
+
+    #[test]
+    fn idempotent_display() {
+        #[track_caller]
+        fn case(s: &str) {
+            assert_eq!(Sed::new(s).unwrap().to_string(), s);
+            let sed = Sed::new(s).unwrap();
+            assert_eq!(Sed::new(&sed.to_string()).unwrap(), sed);
+        }
+        case("d;div.entry-content > p:not(:nth-of-type(4) ~ *)/enjoy/");
+        case("s;div.entry-content > p:not(:nth-of-type(4) ~ *)/enjoy/goodbye/");
     }
 }
