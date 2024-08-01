@@ -2,8 +2,8 @@ use serde::Deserialize;
 use url::Url;
 
 pub mod sed;
-
-// TODO: write custom deserialize impls
+mod urlsel;
+pub use urlsel::UrlSelection;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -20,17 +20,6 @@ pub struct BookDef {
     pub overrides: Vec<OverrideChoice>,
     #[serde(default)]
     pub sections: Vec<Section>,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all_fields = "kebab-case")]
-#[serde(rename_all = "kebab-case")]
-pub enum UrlSelection {
-    Range { start: Url, end: Url },
-    Url(Url),
-    List(Vec<Url>),
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]

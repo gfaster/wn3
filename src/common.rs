@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use ego_tree::NodeRef;
 use fetch::FetchContext;
 use generate::{chapter::SpanStyle, image::Image, Chapter, ChapterBuilder};
-use log::warn;
+use log::{trace, warn};
 use regex_lite::Regex;
 use scraper::{node::Element, ElementRef, Html, Node};
 
@@ -88,10 +88,7 @@ impl Rules {
 /// - handles `<hr>` and similar horizontal separators
 /// - converts `<br>` tags to LF for setting-specific handling
 pub fn add_basic<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>, overrides: &OverrideSet) {
-    let mut enabled: Vec<_> = overrides
-        .replacers()
-        .map(|sed| sed.is_el_match(&el) as u32)
-        .collect();
+    let mut enabled: Vec<_> = overrides.replacers().map(|_| 0).collect();
     descend(ch, *el, overrides, &mut enabled, 1);
 }
 
@@ -126,6 +123,16 @@ fn descend<'a>(
                     continue;
                 }
                 if r.is_el_match(&ElementRef::wrap(el).unwrap()) {
+                    trace!(target: "parsing", "enabling {r:} on {:?}", el.value().as_element().unwrap());
+                    if r.is_del() {
+                        // re-enable since we're skipping
+                        for e in enabled {
+                            if *e == level {
+                                *e = 0;
+                            }
+                        }
+                        return;
+                    }
                     *e = level;
                 }
             }

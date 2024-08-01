@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, rc::Rc};
 
 use ahash::{HashMap, HashMapExt, HashSet};
+use log::debug;
 use url::Url;
 
 use crate::def::{self, sed, UrlSelection};
@@ -20,8 +21,29 @@ impl OverrideSet<'_> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.seds.is_empty() && self.title.is_none()
+    }
+
     pub fn replacers(&self) -> impl Iterator<Item = &sed::Sed> {
         self.seds.iter().flat_map(|x| x.as_ref())
+    }
+}
+
+impl std::fmt::Debug for OverrideSet<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("OverrideSet");
+        // unnecessary allocs
+        let v: Vec<_> = self.replacers().map(|r| r.to_string()).collect();
+        if !v.is_empty() {
+            d.field("seds", &v);
+        }
+
+        if let Some(title) = &self.title {
+            d.field("title", &title);
+        }
+
+        d.finish()
     }
 }
 
@@ -125,6 +147,9 @@ impl OverrideTracker {
                     UrlSelection::List(_) => unreachable!(),
                 }
             }
+        }
+        if !ret.is_empty() {
+            debug!("overrides for {url}: {ret:#?}");
         }
         ret
     }

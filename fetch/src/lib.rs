@@ -19,13 +19,27 @@ mod ratelimit;
 pub struct FetchContext {
     cache: Arc<Mutex<cache::ObjectCache>>,
     client: ureq::Agent,
+    offline: bool,
 }
 
 impl FetchContext {
+    pub fn new_cfg(
+        conn: rusqlite::Connection,
+        client: ureq::Agent,
+        offline: bool,
+    ) -> rusqlite::Result<Self> {
+        Ok(FetchContext {
+            cache: Arc::new(Mutex::new(ObjectCache::new(conn)?)),
+            client,
+            offline,
+        })
+    }
+
     pub fn new(conn: rusqlite::Connection, client: ureq::Agent) -> rusqlite::Result<Self> {
         Ok(FetchContext {
             cache: Arc::new(Mutex::new(ObjectCache::new(conn)?)),
             client,
+            offline: false,
         })
     }
 
@@ -64,6 +78,9 @@ impl FetchContext {
         if let Some(bytes) = self.cache.lock().unwrap().get_bytes(url.as_str()).unwrap() {
             trace!("{url} found in cache");
             return Ok(bytes);
+        }
+        if self.offline {
+            bail!("cannot fetch {url} because offline is enabled")
         }
         let domain = url.domain().unwrap();
         trace!("getting in line to access {}", domain);

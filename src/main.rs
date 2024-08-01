@@ -1,39 +1,70 @@
+use std::path::PathBuf;
+
 use ahash::HashMap;
 use anyhow::{bail, ensure, Context, Result};
+use clap::{ArgAction, Parser};
 use common::Rules;
 use def::BookDef;
 use fetch::FetchContext;
 use generate::{image::Image, EpubBuilder};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use scraper::Html;
 use url::Url;
 use wn3::{def::Section, overrides::OverrideTracker, *};
 
 mod logger;
 
+#[derive(Parser, Debug)]
+struct Args {
+    /// input toml file
+    #[arg(short_alias = 'i', alias = "spec", required = true)]
+    spec: PathBuf,
+
+    #[arg(short, long, default_value = "output.epub")]
+    output: PathBuf,
+
+    #[arg(short, group = "verbosity", action = ArgAction::Count)]
+    verbose: u8,
+
+    #[arg(short, long, group = "verbosity")]
+    quiet: bool,
+
+    #[arg(long)]
+    dump: bool,
+
+    #[arg(long)]
+    offline: bool,
+
+    #[arg(short, long)]
+    check: bool,
+}
+
 fn main() -> Result<()> {
     logger::init().unwrap();
-    let f = std::fs::read_to_string("cfg.toml").context("failed to open config")?;
-    let def: BookDef = toml::from_str(&f).context("failed to parse config")?;
-    def.validate().context("failed to validate def")?;
+    let args = Args::parse();
+    match args.verbose {
+        0 => log::set_max_level(log::LevelFilter::Info),
+        1 => log::set_max_level(log::LevelFilter::Debug),
+        2 => log::set_max_level(log::LevelFilter::Trace),
+        _ => bail!("maximum verbosity is 2 (-vv)"),
+    }
 
-    let args: Vec<_> = std::env::args().collect();
-    let rules = if let Some(s) = args.iter().find_map(|a| a.strip_prefix("--rules=")) {
-        match s {
-            "il" => Rules::new_il(),
-            "shikka" => Rules::new_shikka(),
-            _ => bail!("unknown ruleset {s}"),
-        }
-    } else {
-        Rules::new_il()
-    };
+    build(&args)
+}
+
+fn build(args: &Args) -> Result<()> {
+    let f = std::fs::read_to_string(&args.spec)
+        .with_context(|| format!("failed to open spec {}", args.spec.display()))?;
+    let def: BookDef = toml::from_str(&f).context("failed to parse spec")?;
+    def.validate().context("spec invalid")?;
+    let rules = Rules::new_il();
     let mut book = generate::EpubBuilder::new();
     let conn = rusqlite::Connection::open("cache.db")?;
     let client = ureq::AgentBuilder::new()
         .https_only(true)
         .user_agent("wn-scraper3/0.0.1 (github.com/gfaster)")
         .build();
-    let cx = FetchContext::new(conn, client).unwrap();
+    let cx = FetchContext::new_cfg(conn, client, args.offline).unwrap();
     book.set_title(def.title);
     book.add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
     if let Some(tl) = def.translator {
@@ -70,6 +101,7 @@ fn main() -> Result<()> {
                     end,
                     &sections,
                     &mut overrides,
+                    args,
                 ) {
                     error!("{e:?}");
                     has_failed = true;
@@ -84,6 +116,7 @@ fn main() -> Result<()> {
                     url,
                     &sections,
                     &mut overrides,
+                    args,
                 ) {
                     error!("{e:?}");
                     has_failed = true;
@@ -99,6 +132,7 @@ fn main() -> Result<()> {
                         url,
                         &sections,
                         &mut overrides,
+                        args,
                     ) {
                         error!("{e:?}");
                         has_failed = true;
@@ -112,32 +146,35 @@ fn main() -> Result<()> {
         bail!("aborting due to previous failures")
     }
 
-    finish(book).context("failed writing epub")?;
+    finish(book, args).context("failed writing epub")?;
 
     Ok(())
 }
 
-fn finish(book: EpubBuilder) -> anyhow::Result<()> {
-    info!(target: "progress", "writing epub");
-    let outpath = "output.epub";
+fn finish(book: EpubBuilder, args: &Args) -> anyhow::Result<()> {
+    info!(target: "progress", "writing to {}", args.output.display());
     let mut outfile = std::fs::OpenOptions::new()
         .write(true)
         .read(false)
         .truncate(true)
         .create(true)
-        .open(outpath)
-        .context("could not open output epub")?;
+        .open(&args.output)
+        .with_context(|| format!("could not open {}", args.output.display()))?;
     book.finish(&mut outfile)
         .context("could not write to file")?;
-    info!(target: "progress", "running epubcheck");
-    if let Ok(res) = generate::epubcheck::epubcheck(outpath) {
-        res.as_result(generate::epubcheck::Severity::Error)?;
-        if let Err(e) = res.as_result(generate::epubcheck::Severity::Usage) {
-            warn!("epubcheck warnings");
-            warn!("{e}");
+    if args.check {
+        info!(target: "progress", "running epubcheck");
+        if let Ok(res) = generate::epubcheck::epubcheck(&args.output) {
+            res.as_result(generate::epubcheck::Severity::Error)?;
+            if let Err(e) = res.as_result(generate::epubcheck::Severity::Usage) {
+                warn!("epubcheck warnings");
+                warn!("{e}");
+            }
+        } else {
+            warn!("could not run epubcheck")
         }
     } else {
-        warn!("could not run epubcheck")
+        debug!("epubcheck is disabled")
     }
     Ok(())
 }
@@ -150,6 +187,7 @@ fn fetch_range(
     end: Url,
     sections: &HashMap<Url, String>,
     track: &mut OverrideTracker,
+    args: &Args,
 ) -> anyhow::Result<()> {
     ensure!(
         start.scheme() == end.scheme(),
@@ -183,6 +221,9 @@ fn fetch_range(
         } else {
             None
         };
+        if args.dump {
+            println!("{ch:#}")
+        }
         book.add_chapter(ch);
         ensure!(
             prev.is_none() || prev != next,
@@ -205,4 +246,16 @@ fn fetch_range(
         curr = next
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::*;
+
+    #[test]
+    fn args_valid() {
+        Args::command().debug_assert();
+    }
 }

@@ -1,6 +1,6 @@
 use anyhow::{bail, ensure, Context, Result};
 use generate::Chapter;
-use log::trace;
+use log::{debug, warn};
 use regex_lite::Regex;
 use scraper::{ElementRef, Html, Selector};
 
@@ -107,7 +107,7 @@ impl RuleSet for Reigokai {
                 .any(|t| t.contains("TLN") || t.contains("Sponsored"))
         {
             let mut removed = 0;
-            trace!("removing prefix TLN");
+            debug!("removing prefix TLN");
             while let Some(el) = it.next() {
                 removed += 1;
                 if self.simple_exclude(&el) {
@@ -116,7 +116,7 @@ impl RuleSet for Reigokai {
                 if is_hr(&el) {
                     if removed > 10 {
                         let title = self.title(html);
-                        // has no hr, maybe want to make this as part of cfg.toml
+                        // wm 333 has no hr, maybe want to make this as part of cfg.toml
                         if title == "Chapter 333" {
                             it = html.select(&self.p_sel).filter(filter);
                             break;
@@ -129,11 +129,19 @@ impl RuleSet for Reigokai {
                             ensure!(first == Some("Sponsored Chapter!"));
                             break;
                         }
-                        // extra long note
+                        // extra long note wm 200
                         if title.contains("Chapter 200") {
                             ensure!(
                                 removed == 13,
                                 "expected 13 skipped chapters for chapter 200 but found {removed}"
+                            );
+                            break;
+                        }
+                        // extra long note tsuki 370
+                        if title.contains("Chapter 370") {
+                            ensure!(
+                                removed == 11,
+                                "expected 11 skipped chapters for chapter 370 but found {removed}"
                             );
                             break;
                         }
@@ -146,7 +154,17 @@ impl RuleSet for Reigokai {
                     // right-align)
                     it = html.select(&self.p_sel).filter(filter);
                     let first = it.next().and_then(|e| e.text().next());
+                    debug!("removed a bunch after sponsored chapter with no newl: resetting");
                     ensure!(first == Some("Sponsored Chapter!"));
+                    break;
+                }
+                if removed > 25 {
+                    if overrides.is_empty() {
+                        warn!("removing a whole lot with no overrides: resetting")
+                    } else {
+                        debug!("removed a whole bunch with overrides: resetting")
+                    }
+                    it = html.select(&self.p_sel).filter(filter);
                     break;
                 }
             }
