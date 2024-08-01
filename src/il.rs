@@ -16,7 +16,7 @@ pub struct IlConfig {
 impl Default for IlConfig {
     fn default() -> Self {
         IlConfig {
-            strip_fwd_tln: false,
+            strip_fwd_tln: true,
         }
     }
 }

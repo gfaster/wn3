@@ -6,7 +6,7 @@ use url::Url;
 use crate::def::{self, sed, UrlSelection};
 
 pub struct OverrideSet<'a> {
-    seds: Vec<Rc<[sed::SedLite]>>,
+    seds: Vec<Rc<[sed::Sed]>>,
     pub title: Option<String>,
     _ph: PhantomData<&'a OverrideTracker>,
 }
@@ -20,7 +20,7 @@ impl OverrideSet<'_> {
         }
     }
 
-    pub fn replacers(&self) -> impl Iterator<Item = &sed::SedLite> {
+    pub fn replacers(&self) -> impl Iterator<Item = &sed::Sed> {
         self.seds.iter().flat_map(|x| x.as_ref())
     }
 }
@@ -28,7 +28,7 @@ impl OverrideSet<'_> {
 struct OverrideChoice {
     urls: UrlSelection,
     title: Option<String>,
-    subs: Rc<[sed::SedLite]>,
+    subs: Rc<[sed::Sed]>,
 }
 
 pub struct OverrideTracker {

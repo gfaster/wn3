@@ -49,7 +49,7 @@ pub struct OverrideChoice {
     pub urls: UrlSelection,
     pub title: Option<String>,
     #[serde(default)]
-    pub subs: Vec<sed::SedLite>,
+    pub subs: Vec<sed::Sed>,
 }
 
 #[derive(Debug)]

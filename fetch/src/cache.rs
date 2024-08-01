@@ -186,7 +186,6 @@ CREATE TABLE IF NOT EXISTS cache_entries (id INTEGER PRIMARY KEY,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::prelude::*;
 
     fn new_cache() -> ObjectCache {
         ObjectCache::new(rusqlite::Connection::open_in_memory().unwrap()).unwrap()

@@ -88,10 +88,22 @@ impl Rules {
 /// - handles `<hr>` and similar horizontal separators
 /// - converts `<br>` tags to LF for setting-specific handling
 pub fn add_basic<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>, overrides: &OverrideSet) {
-    descend(ch, *el, overrides)
+    let mut enabled: Vec<_> = overrides
+        .replacers()
+        .map(|sed| sed.is_el_match(&el) as u32)
+        .collect();
+    descend(ch, *el, overrides, &mut enabled, 1);
 }
 
-fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>, overrides: &OverrideSet) {
+/// enabled is the level that the corresponding override was enabled at. enabled == 0 means it's
+/// disabled
+fn descend<'a>(
+    ch: &mut ChapterBuilder<'a>,
+    el: NodeRef<'a, Node>,
+    overrides: &OverrideSet,
+    enabled: &mut [u32],
+    level: u32,
+) {
     match el.value() {
         scraper::Node::Document => (),
         scraper::Node::Fragment => (),
@@ -100,45 +112,66 @@ fn descend<'a>(ch: &mut ChapterBuilder<'a>, el: NodeRef<'a, Node>, overrides: &O
         scraper::Node::Text(txt) => {
             let txt = overrides
                 .replacers()
-                .fold(Cow::from(&**txt), |acc, sed| sed.apply(acc));
+                .zip(&*enabled)
+                .filter(|(_r, e)| **e != 0)
+                .map(|(r, _)| r)
+                .fold(Cow::from(&**txt), |acc, sed| sed.apply_text(acc));
             ch.add_text(txt);
         }
-        scraper::Node::Element(e) => match e.name() {
-            "hr" => {
-                ch.add_separator();
-            }
-            "br" => {
-                ch.add_text("\n");
-            }
-            "img" => {
-                let Some(src) = e.attr("src") else {
-                    warn!(target: "parsing", "image {e:?} has no src");
-                    return;
-                };
-                let src = src.split_once('?').map_or(src, |(base, _query)| base);
-                let alt = e.attr("alt").map(|alt| alt.to_owned());
-                let mut img = Image::new(src);
-                img.alt = alt;
-                ch.add_image(img);
-            }
-            "script" => (),
-            _ => {
-                let prev_style = ch.span_style;
-                if is_italics_tag(e) {
-                    ch.span_style += SpanStyle::italic();
+        scraper::Node::Element(e) => {
+            // enable elements that are disabled this level
+            for (r, e) in overrides.replacers().zip(&mut *enabled) {
+                if *e != 0 {
+                    debug_assert!(*e < level);
+                    continue;
                 }
-                if is_bold_tag(e) {
-                    ch.span_style += SpanStyle::bold();
-                }
-                for child in el.children() {
-                    descend(ch, child, overrides);
-                }
-                ch.span_style_set(prev_style);
-                if e.name() == "p" {
-                    ch.paragraph_finish();
+                if r.is_el_match(&ElementRef::wrap(el).unwrap()) {
+                    *e = level;
                 }
             }
-        },
+            match e.name() {
+                "hr" => {
+                    ch.add_separator();
+                }
+                "br" => {
+                    ch.add_text("\n");
+                }
+                "img" => {
+                    let Some(src) = e.attr("src") else {
+                        warn!(target: "parsing", "image {e:?} has no src");
+                        return;
+                    };
+                    let src = src.split_once('?').map_or(src, |(base, _query)| base);
+                    let alt = e.attr("alt").map(|alt| alt.to_owned());
+                    let mut img = Image::new(src);
+                    img.alt = alt;
+                    ch.add_image(img);
+                }
+                "script" => (),
+                _ => {
+                    let prev_style = ch.span_style;
+                    if is_italics_tag(e) {
+                        ch.span_style += SpanStyle::italic();
+                    }
+                    if is_bold_tag(e) {
+                        ch.span_style += SpanStyle::bold();
+                    }
+                    for child in el.children() {
+                        descend(ch, child, overrides, enabled, level + 1);
+                    }
+                    ch.span_style_set(prev_style);
+                    if e.name() == "p" {
+                        ch.paragraph_finish();
+                    }
+                }
+            }
+            // disable elements we matched in this level
+            for e in enabled {
+                if *e == level {
+                    *e = 0;
+                }
+            }
+        }
         scraper::Node::ProcessingInstruction(_) => (),
     }
 }

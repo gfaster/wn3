@@ -1,5 +1,12 @@
 /target
 */target
 tmp
+/*.html
+*.fxt
+*.fxt.old
+perf.data
+perf.data.old
+flamegraph.svg
+cfg.*
 *.epub
 *.db

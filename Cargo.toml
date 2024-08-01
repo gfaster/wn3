@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-default-members = ["fetch", "generate"]
+default-members = ["fetch", "generate", "."]
 
 [package]
 name = "wn3"
