@@ -219,11 +219,7 @@ impl OpfBuilder {
         }
 
         // various non-fatal warnings
-        if contributors
-            .iter()
-            .find(|c| c.0 == ContributorRole::Author)
-            .is_none()
-        {
+        if !contributors.iter().any(|c| c.0 == ContributorRole::Author) {
             warn!("opf has no author")
         }
 
@@ -232,9 +228,9 @@ impl OpfBuilder {
             title,
             subtitle,
             publisher,
-            contributors,
             date,
             identifiers,
+            contributors,
             manifest_nav,
             manifest_cover,
             manifest,

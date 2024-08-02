@@ -45,7 +45,7 @@ impl<'de> Visitor<'de> for UrlSelVisitor {
     {
         // I think there is a better way of doing this?
         Url::parse(v)
-            .map(|url| UrlSelection::Url(url))
+            .map(UrlSelection::Url)
             .map_err(|_| E::invalid_value(de::Unexpected::Str(v), &"a valid url"))
     }
 

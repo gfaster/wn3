@@ -10,10 +10,10 @@ impl log::Log for SimpleLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let module = record.module_path().unwrap_or("unknown");
-            if module.starts_with("selectors") || module.starts_with("html5ever") {
-                if record.level() > Level::Info {
-                    return;
-                }
+            if (module.starts_with("selectors") || module.starts_with("html5ever"))
+                && record.level() > Level::Info
+            {
+                return;
             }
             if record.target() == "progress" {
                 eprintln!("{}...", record.args());

@@ -22,6 +22,7 @@ fn assert_no_collisions(url: &str, hash: u64) {
     m.entry(hash)
         .and_modify(|x| assert_eq!(&**x, url, "hash collision"))
         .or_insert_with(|| url.into());
+    drop(lock)
 }
 
 #[cfg(not(debug_assertions))]

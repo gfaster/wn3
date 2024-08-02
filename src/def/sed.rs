@@ -48,7 +48,6 @@ pub struct Sed {
 }
 
 impl Sed {
-    #[must_use]
     pub fn new(s: &str) -> SedParseRes {
         parse_sed(s).with_context(|| format!("failed to parse sed {s}"))
     }
@@ -112,9 +111,9 @@ impl Sed {
     /// calls `f` on all elements that selector matches, or on all elements if there is no selector
     fn select_el(&self, el: &ElementRef, mut f: impl FnMut(ElementRef)) {
         if let Some(sel) = &self.sel() {
-            el.select(sel).for_each(|el| f(el))
+            el.select(sel).for_each(&mut f)
         } else {
-            el.descendent_elements().for_each(|el| f(el))
+            el.descendent_elements().for_each(f)
         }
     }
 
@@ -168,7 +167,7 @@ impl Sed {
             }
             return None;
         }
-        Some(el.clone())
+        Some(*el)
     }
 
     /// Apply to `s`, this assumes CSS matches

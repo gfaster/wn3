@@ -38,6 +38,7 @@ impl RateLimit {
         } else {
             *last = now;
         }
+        drop(lock)
     }
 }
 

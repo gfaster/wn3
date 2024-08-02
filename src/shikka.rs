@@ -7,13 +7,8 @@ use crate::{
     overrides::OverrideSet,
 };
 
+#[derive(Default)]
 pub struct ShikkaConfig {}
-
-impl Default for ShikkaConfig {
-    fn default() -> Self {
-        ShikkaConfig {}
-    }
-}
 
 pub struct Rule {
     next_sel: Selector,

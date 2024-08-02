@@ -59,23 +59,15 @@ fn args() -> (Html, ValidateRule) {
     }
     let mut contain_rules =
         Vec::with_capacity(no_contain.len() + must_contain.len() + invariant_contain.len());
-    contain_rules.extend(no_contain.into_iter().map(|x| CaseType::FailOmits(x)));
-    contain_rules.extend(must_contain.into_iter().map(|x| CaseType::FailHas(x)));
-    contain_rules.extend(
-        invariant_contain
-            .into_iter()
-            .map(|x| CaseType::InvariantHas(x)),
-    );
+    contain_rules.extend(no_contain.into_iter().map(CaseType::FailOmits));
+    contain_rules.extend(must_contain.into_iter().map(CaseType::FailHas));
+    contain_rules.extend(invariant_contain.into_iter().map(CaseType::InvariantHas));
 
     let mut regex_rules =
         Vec::with_capacity(no_match.len() + must_match.len() + invariant_match.len());
-    regex_rules.extend(no_match.into_iter().map(|x| CaseType::FailOmits(x)));
-    regex_rules.extend(must_match.into_iter().map(|x| CaseType::FailHas(x)));
-    regex_rules.extend(
-        invariant_match
-            .into_iter()
-            .map(|x| CaseType::InvariantHas(x)),
-    );
+    regex_rules.extend(no_match.into_iter().map(CaseType::FailOmits));
+    regex_rules.extend(must_match.into_iter().map(CaseType::FailHas));
+    regex_rules.extend(invariant_match.into_iter().map(CaseType::InvariantHas));
 
     let serialization_style = if xml {
         SerStyle::Xml
@@ -593,7 +585,7 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
                     qualname.clone(),
                     classes
                         .iter()
-                        .map(|&c| c)
+                        .copied()
                         .filter(|&c| c != class)
                         .collect::<Vec<_>>()
                         .join(" ")
@@ -608,14 +600,12 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
         let node = node.value();
         let Node::Element(e) = node else { panic!() };
         if classes.is_empty() {
-            e.attrs.get_mut(&qualname).map(|c| *c = "".into());
+            if let Some(c) = e.attrs.get_mut(&qualname) {
+                *c = "".into()
+            }
         } else {
-            *e.attrs.get_mut(&qualname).unwrap() = classes
-                .iter()
-                .map(|&c| c)
-                .collect::<Vec<_>>()
-                .join(" ")
-                .into();
+            *e.attrs.get_mut(&qualname).unwrap() =
+                classes.iter().copied().collect::<Vec<_>>().join(" ").into();
         }
     }
     eprintln!("class stripping complete");

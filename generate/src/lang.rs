@@ -7,7 +7,7 @@ use std::{fmt, str::FromStr};
 pub const DEFAULT_LANG: Lang = Lang::En;
 
 pub const ALL_LANGS: [Lang; 4] = [Lang::En, Lang::De, Lang::Zh, Lang::Ja];
-pub const ALL_LANGS_STR: [&'static str; 4] = ["en", "de", "zh", "ja"];
+pub const ALL_LANGS_STR: [&str; 4] = ["en", "de", "zh", "ja"];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
@@ -125,17 +125,23 @@ impl StrLang {
     }
 
     /// sets the alternate script for lang, returning Err if it exists
-    pub fn try_set_alt(&mut self, lang: Lang, s: impl Into<Box<str>>) -> Result<(), ()> {
+    pub fn try_set_alt(
+        &mut self,
+        lang: Lang,
+        s: impl Into<Box<str>>,
+    ) -> Result<(), LangItemExistsError> {
         match &mut self.0 {
-            StrLangInner::Single((old_lang, _)) if *old_lang == lang => return Err(()),
+            StrLangInner::Single((old_lang, _)) if *old_lang == lang => {
+                return Err(LangItemExistsError)
+            }
             StrLangInner::Single((first_lang, first_s)) => {
                 let first_s = std::mem::take(first_s);
                 let first = (*first_lang, first_s);
                 self.0 = StrLangInner::Many(vec![first, (lang, s.into())]);
             }
             StrLangInner::Many(v) => {
-                if v.iter_mut().find(|(l, _)| *l == lang).is_some() {
-                    return Err(());
+                if v.iter_mut().any(|(l, _)| *l == lang) {
+                    return Err(LangItemExistsError);
                 } else {
                     v.push((lang, s.into()))
                 }
@@ -178,3 +184,15 @@ impl From<Box<str>> for StrLang {
         StrLang::new(Lang::default(), value)
     }
 }
+
+/// error emitted by [`StrLang::try_set_alt`]
+#[derive(Debug)]
+pub struct LangItemExistsError;
+
+impl std::fmt::Display for LangItemExistsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        "lang str already has entry for language".fmt(f)
+    }
+}
+
+impl std::error::Error for LangItemExistsError {}

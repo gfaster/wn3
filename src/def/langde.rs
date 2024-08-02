@@ -60,7 +60,7 @@ impl<'de> Deserialize<'de> for LangDe {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(LangV).map(|v| LangDe(v))
+        deserializer.deserialize_any(LangV).map(LangDe)
     }
 }
 

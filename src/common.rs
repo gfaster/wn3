@@ -59,14 +59,14 @@ impl Rules {
         let title = if let Some(title) = &overrides.title {
             title.to_owned()
         } else {
-            self.inner.title(&html)
+            self.inner.title(html)
         };
         ch.title_set(title.clone());
         self.inner
             .parse_body(html, overrides, &mut ch)
             .with_context(|| format!("invalid chapter: {title}"))?;
 
-        let next = self.inner.next_chapter(&html);
+        let next = self.inner.next_chapter(html);
         if ch.requires_resolution() {
             let store = store.context("chapter has images but no fetch context was provided")?;
             ch.resolve_resources(store)

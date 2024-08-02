@@ -87,7 +87,7 @@ fn build(args: &Args) -> Result<()> {
         .https_only(true)
         .user_agent("wn-scraper3/0.0.1 (github.com/gfaster)")
         .build();
-    let cx = FetchContext::new_cfg(conn, client, args.offline).unwrap();
+    let fetch = FetchContext::new_cfg(conn, client, args.offline).unwrap();
     book.set_title(def.title);
     book.add_author(def.author);
     book.add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
@@ -98,7 +98,7 @@ fn build(args: &Args) -> Result<()> {
 
     if let Some(cover) = def.cover_image {
         if let Err(e) = book
-            .set_cover(Image::new(cover.as_str()), &cx)
+            .set_cover(Image::new(cover.as_str()), &fetch)
             .context("could not set cover")
         {
             error!("{e:?}");
@@ -113,51 +113,31 @@ fn build(args: &Args) -> Result<()> {
         .collect();
     let mut overrides = OverrideTracker::new(def.overrides);
 
+    let cx = ProgCx {
+        fetch,
+        rules,
+        sections,
+        args,
+    };
+
     info!(target: "progress", "building chapters");
     for entry in def.content {
         match entry {
             def::UrlSelection::Range { start, end } => {
-                if let Err(e) = fetch_range(
-                    &cx,
-                    &mut book,
-                    &rules,
-                    start,
-                    end,
-                    &sections,
-                    &mut overrides,
-                    args,
-                ) {
+                if let Err(e) = fetch_range(&cx, &mut book, start, end, &mut overrides) {
                     error!("{e:?}");
                     has_failed = true;
                 }
             }
             def::UrlSelection::Url(url) => {
-                if let Err(e) = fetch_range(
-                    &cx,
-                    &mut book,
-                    &rules,
-                    url.clone(),
-                    url,
-                    &sections,
-                    &mut overrides,
-                    args,
-                ) {
+                if let Err(e) = fetch_range(&cx, &mut book, url.clone(), url, &mut overrides) {
                     error!("{e:?}");
                     has_failed = true;
                 }
             }
             def::UrlSelection::List(list) => {
                 for url in list {
-                    if let Err(e) = fetch_range(
-                        &cx,
-                        &mut book,
-                        &rules,
-                        url.clone(),
-                        url,
-                        &sections,
-                        &mut overrides,
-                        args,
-                    ) {
+                    if let Err(e) = fetch_range(&cx, &mut book, url.clone(), url, &mut overrides) {
                         error!("{e:?}");
                         has_failed = true;
                     }
@@ -203,15 +183,19 @@ fn finish(book: EpubBuilder, args: &Args) -> anyhow::Result<()> {
     Ok(())
 }
 
+struct ProgCx<'a> {
+    fetch: FetchContext,
+    rules: Rules,
+    sections: HashMap<Url, String>,
+    args: &'a Args,
+}
+
 fn fetch_range(
-    cx: &FetchContext,
+    cx: &ProgCx,
     book: &mut EpubBuilder<'_>,
-    rules: &Rules,
     start: Url,
     end: Url,
-    sections: &HashMap<Url, String>,
     track: &mut OverrideTracker,
-    args: &Args,
 ) -> anyhow::Result<()> {
     ensure!(
         start.scheme() == end.scheme(),
@@ -224,28 +208,29 @@ fn fetch_range(
     let mut prev = None;
     let mut curr = start;
     loop {
-        if let Some(section) = sections.get(&curr) {
+        if let Some(section) = cx.sections.get(&curr) {
             warn!("TODO: handle section {section}")
         }
         ensure!(
             curr.scheme() == "https" || curr.scheme() == "file",
             "url {curr} does not have expected scheme"
         );
-        let (ty, val) = cx.fetch(&curr).context("failed fetching")?;
+        let (ty, val) = cx.fetch.fetch(&curr).context("failed fetching")?;
         ensure!(ty == fetch::MediaType::Html, "{ty:?} is of wrong type");
         let html = std::str::from_utf8(&val).context("not valid utf-8")?;
-        let html = Html::parse_document(&html);
+        let html = Html::parse_document(html);
         let html = Box::leak(Box::new(html));
         let overrides = track.with_url(&curr);
-        let (ch, next) = rules
-            .parse_with_overrides(html, &overrides, Some(cx))
+        let (ch, next) = cx
+            .rules
+            .parse_with_overrides(html, &overrides, Some(&cx.fetch))
             .context("failed to build chapter")?;
         let next = if let Some(next) = next {
             Some(Url::parse(next).context("invalid url")?)
         } else {
             None
         };
-        if args.dump {
+        if cx.args.dump {
             println!("{ch:#}")
         }
         book.add_chapter(ch);

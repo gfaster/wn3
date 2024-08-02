@@ -43,10 +43,8 @@ mod test_log {
                 let module = record.module_path().unwrap_or("");
                 let is_selectors = module.starts_with("selectors") && false;
                 let is_html5ever = module.starts_with("html5ever") && false;
-                if is_selectors || is_html5ever {
-                    if record.level() > Level::Info {
-                        return;
-                    }
+                if (is_selectors || is_html5ever) && record.level() > Level::Info {
+                    return;
                 }
                 eprintln!("[{}] {}", record.level(), record.args());
             }

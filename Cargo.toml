@@ -44,6 +44,7 @@ ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
 ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
 scraper = {git = "https://github.com/gfaster/scraper.git"}
 
+
 [profile.release]
 strip = true
 # debug = true
@@ -51,8 +52,17 @@ strip = true
 [features]
 
 [workspace.lints.rust]
-future-incompatible = "deny"
+# future-incompatible = "deny"
 
 [workspace.lints.clippy]
 allow_attributes_without_reason = "warn"
 inefficient_to_string = "warn"
+inconsistent_struct_constructor = "warn"
+index_refutable_slice = "warn"
+map_unwrap_or = "warn"
+significant_drop_tightening = "warn"
+str_to_string = "warn"
+trivial_regex = "warn"
+unicode_not_nfc = "deny"
+unnested_or_patterns = "warn"
+unused_peekable = "warn"
