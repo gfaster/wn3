@@ -18,6 +18,7 @@ use crate::{
     },
     html_writer::EscapeBody,
     image::{Image, ImageId, ResolvedImage},
+    lang::StrLang,
 };
 
 use super::package::{ContributorRole, IdentifierType, OpfBuilder};
@@ -79,19 +80,19 @@ impl<'a> EpubBuilder<'a> {
         self
     }
 
-    pub fn set_title(&mut self, title: impl Into<Box<str>>) -> &mut Self {
-        self.opf.title.set(title.into());
+    pub fn set_title(&mut self, title: impl Into<StrLang>) -> &mut Self {
+        self.opf.title = Some(title.into());
         self
     }
 
-    pub fn add_author(&mut self, author: impl Into<Box<str>>) -> &mut Self {
+    pub fn add_author(&mut self, author: impl Into<StrLang>) -> &mut Self {
         self.opf
             .contributors
             .push((ContributorRole::Author, author.into()));
         self
     }
 
-    pub fn add_translator(&mut self, translator: impl Into<Box<str>>) -> &mut Self {
+    pub fn add_translator(&mut self, translator: impl Into<StrLang>) -> &mut Self {
         self.opf
             .contributors
             .push((ContributorRole::Translator, translator.into()));
@@ -101,7 +102,7 @@ impl<'a> EpubBuilder<'a> {
     pub fn add_contributor(
         &mut self,
         role: ContributorRole,
-        creator: impl Into<Box<str>>,
+        creator: impl Into<StrLang>,
     ) -> &mut Self {
         self.opf.contributors.push((role, creator.into()));
         self
@@ -196,7 +197,7 @@ impl<'a> EpubBuilder<'a> {
         let spec = self.opf.finish().map_err(|e| error!("{e:?}")).unwrap();
 
         zip.start_file("EPUB/nav.xhtml", compressed)?;
-        write_nav(&mut zip, spec.title(), &chunks)?;
+        write_nav(&mut zip, spec.native_title(), &chunks)?;
 
         zip.start_file("EPUB/css/epub.css", compressed)?;
         zip.write_all(include_str!("../../epub.css").as_bytes())?;

@@ -9,11 +9,15 @@ use std::{rc::Rc, time::SystemTime};
 use fetch::MediaType;
 use time::{format_description, OffsetDateTime};
 
-use crate::util::{OptSetting, Setting};
+use crate::{
+    lang::{Lang, StrLang},
+    util::OptSetting,
+};
 
 pub struct OpfBuilder {
-    pub language: Setting,
-    pub title: Setting,
+    /// the native language of the book
+    pub language: Lang,
+    pub title: Option<StrLang>,
     pub subtitle: OptSetting,
     pub publisher: OptSetting,
     pub date: SystemTime,
@@ -26,7 +30,7 @@ pub struct OpfBuilder {
     pub identifiers: Vec<(IdentifierType, Box<str>)>,
 
     /// contributors (creators) with their MARC relator role
-    pub contributors: Vec<(ContributorRole, Box<str>)>,
+    pub contributors: Vec<(ContributorRole, StrLang)>,
 
     /// every item in reading order.
     ///
@@ -36,6 +40,9 @@ pub struct OpfBuilder {
 
 #[derive(Debug)]
 pub struct OpfError {
+    // phase 0 errors
+    no_title: bool,
+
     // phase 1 errors
     no_nav: bool,
     no_identifiers: bool,
@@ -43,6 +50,8 @@ pub struct OpfError {
     multiple_nav: bool,
     multiple_cover: bool,
     conflicting_manifest_properties: bool,
+    no_native_title: bool,
+    no_native_contrib: bool,
     // phase 2 errors
 }
 
@@ -54,18 +63,21 @@ impl OpfError {
             | self.multiple_nav
             | self.multiple_cover
             | self.conflicting_manifest_properties
+            | self.no_title
+            | self.no_native_title
+            | self.no_native_contrib
     }
 }
 
 pub struct OpfSpec {
-    language: Setting,
-    title: Setting,
+    language: Lang,
+    title: StrLang,
     subtitle: OptSetting,
     publisher: OptSetting,
     date: SystemTime,
 
     identifiers: Vec<(IdentifierType, Box<str>)>,
-    contributors: Vec<(ContributorRole, Box<str>)>,
+    contributors: Vec<(ContributorRole, StrLang)>,
 
     manifest_nav: ManifestItem,
     manifest_cover: Option<ManifestItem>,
@@ -76,8 +88,8 @@ pub struct OpfSpec {
 impl OpfBuilder {
     pub const fn new() -> Self {
         Self {
-            language: Setting::dft("en"),
-            title: Setting::dft("Ebook"),
+            language: Lang::En,
+            title: None,
             subtitle: OptSetting::new(),
             publisher: OptSetting::new(),
             date: SystemTime::UNIX_EPOCH,
@@ -110,7 +122,33 @@ impl OpfBuilder {
             multiple_nav: false,
             multiple_cover: false,
             conflicting_manifest_properties: false,
+            no_title: false,
+            no_native_title: false,
+            no_native_contrib: false,
         };
+        // phase 0
+        if title.is_none() {
+            e.no_title = true;
+        }
+
+        if e.any() {
+            return Err(e);
+        }
+
+        // phase 1
+
+        let title = title.expect("should have returned if title is none in phase 0");
+
+        if title.for_lang(language).is_none() {
+            e.no_native_title = true;
+        }
+
+        for contrib in &contributors {
+            if contrib.1.for_lang(language).is_none() {
+                e.no_native_contrib = true;
+            }
+        }
+
         if identifiers.is_empty() {
             e.no_identifiers = true;
         }
@@ -221,7 +259,7 @@ impl OpfSpec {
             "package",
             [
                 ("version", "3.0"),
-                ("xml:lang", "en"),
+                ("xml:lang", self.language.to_str()),
                 ("xmlns", "http://www.idpf.org/2007/opf"),
                 ("unique-identifier", "identifier_0"),
             ],
@@ -231,16 +269,34 @@ impl OpfSpec {
                 "metadata",
                 [("xmlns:dc", "http://purl.org/dc/elements/1.1/")],
             )?;
-
+            // ====================
+            // title and subtitle
+            // ====================
             metadata
                 .mkel("dc:title", [("id", "title_main")])?
-                .write_field(self.title())?;
+                .write_field(self.native_title())?;
             metadata
                 .mkel(
                     "meta",
                     [("refines", "#title_main"), ("property", "title-type")],
                 )?
                 .write_field("main")?;
+            for (alt_lang, alt) in self.title.iter() {
+                if alt_lang == self.language {
+                    continue;
+                }
+                metadata
+                    .mkel(
+                        "meta",
+                        [
+                            ("refines", "title_main"),
+                            ("property", "alternate-script"),
+                            ("xml:lang", alt_lang.as_str()),
+                        ],
+                    )?
+                    .write_field(alt)?;
+                metadata.write_lf()?;
+            }
             if let Some(subtitle) = self.subtitle.get() {
                 metadata
                     .mkel("dc:title", [("id", "title_sub")])?
@@ -253,6 +309,9 @@ impl OpfSpec {
                     .write_field("subtitle")?;
             }
 
+            // ====================
+            // identifiers and date
+            // ====================
             for (i, &(_ty, ref id)) in self.identifiers.iter().enumerate() {
                 metadata
                     .mkel("dc:identifier", [("id", &*format!("identifier_{i}"))])?
@@ -271,6 +330,10 @@ impl OpfSpec {
                 .mkel("meta", [("property", "dcterms:modified")])?
                 .write_field(datestr)?;
             metadata.write_lf()?;
+
+            // ====================
+            // contributers
+            // ====================
             for (i, &(role, ref creator)) in self.contributors.iter().enumerate() {
                 let id = format!("creator{i:03}");
                 let selid = format!("#{id}");
@@ -282,7 +345,7 @@ impl OpfSpec {
                 };
                 metadata
                     .mkel(attribution, [("id", &*id)])?
-                    .write_field(&**creator)?;
+                    .write_field(creator.for_lang(self.language).expect("has native"))?;
                 metadata.write_lf()?;
                 metadata
                     .mkel(
@@ -295,10 +358,26 @@ impl OpfSpec {
                     )?
                     .write_field(role.marc_code())?;
                 metadata.write_lf()?;
+                for (alt_lang, alt) in creator.iter() {
+                    if alt_lang == self.language {
+                        continue;
+                    }
+                    metadata
+                        .mkel(
+                            "meta",
+                            [
+                                ("refines", &*selid),
+                                ("property", "alternate-script"),
+                                ("xml:lang", alt_lang.as_str()),
+                            ],
+                        )?
+                        .write_field(alt)?;
+                    metadata.write_lf()?;
+                }
             }
             metadata
                 .mkel("dc:language", [])?
-                .write_field(&*self.language)?;
+                .write_field(self.language)?;
             if let Some(publisher) = self.publisher.get() {
                 metadata.mkel("dc:publisher", [])?.write_field(publisher)?;
                 metadata.write_lf()?;
@@ -359,8 +438,8 @@ impl OpfSpec {
         Ok(())
     }
 
-    pub fn title(&self) -> &str {
-        &self.title
+    pub fn native_title(&self) -> &str {
+        self.title.for_lang(self.language).expect("has native")
     }
 }
 
@@ -524,7 +603,7 @@ mod tests {
     #[test]
     fn it_works() {
         let mut builder = OpfBuilder {
-            title: "test".into(),
+            title: Some("test".into()),
             manifest: vec![
                 ManifestItem::try_new("nav.xhtml").unwrap(),
                 ManifestItem::try_new("chapter-1.xhtml").unwrap(),

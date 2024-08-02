@@ -1,12 +1,26 @@
 # Book specifications are written in TOML
 # see: https://toml.io/en/
 
-# Required fields
-title = "Example Book"
-author = "Isle Osaki"
+# =========  REQUIRED FIELDS  =========
+
+# if there wansn't a Japanese title, we could just do this
+# title = "Example Book"
+title.en = "Example Book"
+title.ja = "例本"
+
+# if the author didn't have a Japanese name, we could just do this
+# author = "Isle Osaki"
+author.en = "Isle Osaki"
+author.ja = "大崎アイル" 
+
+# if langauge isn't specified, it's assumed to be the `language` field.
+# if language is specified, there must be a version that matches `language`
+
 homepage = "https://example.com"
 
-# Optional fields
+# =========  OPTIONAL FIELDS  =========
+
+language = "en" # defaults to en (english)
 subtitle = "A thrilling adventure"
 translator = "Reigokai"
 # all resource urls can be file://

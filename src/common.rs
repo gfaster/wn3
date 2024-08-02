@@ -143,6 +143,9 @@ fn descend<'a>(
                 "br" => {
                     ch.add_text("\n");
                 }
+                "ol" | "ul" | "li" => {
+                    warn!("TODO: handle lists");
+                }
                 "img" => {
                     let Some(src) = e.attr("src") else {
                         warn!(target: "parsing", "image {e:?} has no src");

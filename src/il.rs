@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result};
 use generate::Chapter;
 use log::{debug, warn};
 use regex_lite::Regex;
@@ -39,10 +39,10 @@ impl Reigokai {
             scene_sep_reg: Regex::new(r#"^◇([^◇]*)◇?\s*$"#).unwrap(),
             title_sel: Selector::parse("head > title").unwrap(),
             title_reg: Regex::new(
-                "(?:\\w* \u{2013} )?((?:Chapter|\\[?Not|POV|Prologue).*) \\| Reigokai: Isekai TL",
+                "(?:\\w* \u{2013} )?((?:Chapter|\\[?Not|POV|Prologue|Afterword).*) \\| Reigokai: ",
             )
             .unwrap(),
-            p_sel: Selector::parse("body *.entry-content p,hr").unwrap(),
+            p_sel: Selector::parse("body div.entry-content > *:is(p,hr,ol,ul)").unwrap(),
             cfg,
         }
     }
@@ -51,7 +51,10 @@ impl Reigokai {
         Self::new_with_config(IlConfig::default())
     }
 
-    fn simple_exclude(&self, el: &ElementRef) -> bool {
+    fn simple_exclude(&self, el: &ElementRef, overrides: &OverrideSet) -> bool {
+        if overrides.replacers().any(|s| s.should_delete(el)) {
+            return true;
+        }
         for e in el.select(&self.basic_exclude_sel) {
             if e.value().name() == "script" {
                 return true;
@@ -68,6 +71,13 @@ impl Reigokai {
             }
         }
         false
+    }
+
+    fn simple_title<'a>(&self, html: &'a Html) -> &'a str {
+        html.select(&Selector::parse("head > title").unwrap())
+            .next()
+            .and_then(|t| t.text().next())
+            .unwrap_or("unknown chapter")
     }
 }
 
@@ -109,12 +119,9 @@ impl RuleSet for Reigokai {
         overrides: &OverrideSet,
         ch: &mut generate::ChapterBuilder<'a>,
     ) -> Result<()> {
-        let filter = |el: &ElementRef| !self.simple_exclude(el);
+        let filter = |el: &ElementRef| !self.simple_exclude(el, overrides);
         let mut it = html.select(&self.p_sel).filter(filter);
-        let first = it
-            .clone()
-            .find(|el| !self.simple_exclude(el))
-            .context("no paragraphs")?;
+        let first = it.clone().next().context("no paragraphs")?;
         if self.cfg.strip_fwd_tln
             && first
                 .text()
@@ -124,69 +131,39 @@ impl RuleSet for Reigokai {
             debug!("removing prefix TLN");
             while let Some(el) = it.next() {
                 removed += 1;
-                if self.simple_exclude(&el) {
+                if self.simple_exclude(&el, overrides) {
                     continue;
                 }
                 if is_hr(&el) {
                     if removed > 10 {
-                        let title = self.title(html);
-                        // wm 333 has no hr, maybe want to make this as part of cfg.toml
-                        if title == "Chapter 333" {
-                            it = html.select(&self.p_sel).filter(filter);
-                            break;
-                        }
-                        if removed > 25 && first.text().any(|t| t == "Sponsored Chapter!") {
-                            // probably just no hr below sponsed chapter (maybe look at
-                            // right-align)
-                            it = html.select(&self.p_sel).filter(filter);
-                            let first = it.next().and_then(|e| e.text().next());
-                            ensure!(first == Some("Sponsored Chapter!"));
-                            break;
-                        }
-                        // extra long note wm 200
-                        if title.contains("Chapter 200") {
-                            ensure!(
-                                removed == 13,
-                                "expected 13 skipped chapters for chapter 200 but found {removed}"
-                            );
-                            break;
-                        }
-                        // extra long note tsuki 370
-                        if title.contains("Chapter 370") {
-                            ensure!(
-                                removed == 11,
-                                "expected 11 skipped chapters for chapter 370 but found {removed}"
-                            );
-                            break;
-                        }
-                        bail!("skipped {removed} paragraphs")
+                        warn!(
+                            "removed perhaps too many paragraphs: resetting in {}",
+                            self.simple_title(html)
+                        );
+                        it = html.select(&self.p_sel).filter(filter);
                     }
                     break;
                 }
-                if removed > 25 && first.text().any(|t| t == "Sponsored Chapter!") {
-                    // probably just no hr below sponsed chapter (maybe look at
-                    // right-align)
-                    it = html.select(&self.p_sel).filter(filter);
-                    let first = it.next().and_then(|e| e.text().next());
-                    debug!("removed a bunch after sponsored chapter with no newl: resetting");
-                    ensure!(first == Some("Sponsored Chapter!"));
-                    break;
-                }
+                // if removed > 25 && first.text().any(|t| t == "Sponsored Chapter!") {
+                //     // probably just no hr below sponsed chapter (maybe look at
+                //     // right-align)
+                //     it = html.select(&self.p_sel).filter(filter);
+                //     let first = it.next().and_then(|e| e.text().next());
+                //     debug!("removed a bunch after sponsored chapter with no newl: resetting");
+                //     ensure!(first == Some("Sponsored Chapter!"));
+                //     break;
+                // }
                 if removed > 25 {
-                    if overrides.is_empty() {
-                        warn!("removing a whole lot with no overrides: resetting")
-                    } else {
-                        debug!("removed a whole bunch with overrides: resetting")
-                    }
+                    warn!(
+                        "removing a whole lot: resetting in {}",
+                        self.simple_title(html)
+                    );
                     it = html.select(&self.p_sel).filter(filter);
                     break;
                 }
             }
         }
         for el in it {
-            if self.simple_exclude(&el) {
-                continue;
-            }
             if let Some(sep) = el
                 .text()
                 .next()

@@ -1,9 +1,12 @@
+use generate::lang::StrLang;
 use std::path::PathBuf;
 
+use generate::lang::Lang;
 use log::warn;
 use serde::Deserialize;
 use url::Url;
 
+mod langde;
 pub mod sed;
 mod urlsel;
 pub use urlsel::UrlSelection;
@@ -15,8 +18,12 @@ pub struct BookDef {
     #[serde(skip)]
     pub file: Option<PathBuf>,
 
-    pub title: String,
-    pub author: String,
+    #[serde(deserialize_with = "langde::lang_de", default)]
+    pub language: Lang,
+    #[serde(deserialize_with = "langde::strlang_de")]
+    pub title: StrLang,
+    #[serde(deserialize_with = "langde::strlang_de")]
+    pub author: StrLang,
     pub subtitle: Option<String>,
     pub homepage: Url,
     pub cover_image: Option<Url>,
@@ -62,10 +69,16 @@ impl std::error::Error for BookDefValidationError {}
 impl BookDef {
     pub fn validate(&self) -> Result<(), BookDefValidationError> {
         fn log_if_todo_opt(s: &Option<String>, field: &str) -> bool {
-            s.as_ref().map(|s| log_if_todo(s, field)).unwrap_or(false)
+            if let Some(s) = s.as_deref() {
+                if s.eq_ignore_ascii_case("todo") {
+                    warn!("config field `{field}` is marked as TODO");
+                    return true;
+                }
+            }
+            false
         }
-        fn log_if_todo(s: &str, field: &str) -> bool {
-            if s.eq_ignore_ascii_case("todo") {
+        fn log_if_todo(s: &StrLang, field: &str) -> bool {
+            if s.iter().any(|s| s.1.eq_ignore_ascii_case("todo")) {
                 warn!("config field `{field}` is marked as TODO");
                 return true;
             }
