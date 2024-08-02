@@ -38,7 +38,10 @@ impl Reigokai {
             basic_exclude_sel: Selector::parse(".sharedaddy,p a,script").unwrap(),
             scene_sep_reg: Regex::new(r#"^◇([^◇]*)◇?\s*$"#).unwrap(),
             title_sel: Selector::parse("head > title").unwrap(),
-            title_reg: Regex::new("\\w* \u{2013} (.*) \\| Reigokai: Isekai TL").unwrap(),
+            title_reg: Regex::new(
+                "(?:\\w* \u{2013} )?((?:Chapter|\\[?Not|POV|Prologue).*) \\| Reigokai: Isekai TL",
+            )
+            .unwrap(),
             p_sel: Selector::parse("body *.entry-content p,hr").unwrap(),
             cfg,
         }
@@ -70,13 +73,24 @@ impl Reigokai {
 
 impl RuleSet for Reigokai {
     fn title(&self, html: &Html) -> String {
+        let mut title = None;
         html.select(&self.title_sel)
             .next()
             .and_then(|e| e.text().next())
-            .and_then(|t| self.title_reg.captures(t))
+            .and_then(|t| {
+                title = Some(t);
+                self.title_reg.captures(t)
+            })
             .and_then(|c| c.get(1))
             .map(|m| m.as_str())
-            .unwrap_or("Chapter")
+            .unwrap_or_else(|| {
+                if let Some(title) = title {
+                    warn!("page `{title}` does not match title regex")
+                } else {
+                    warn!("page has no title")
+                }
+                "Chapter"
+            })
             .to_owned()
     }
 

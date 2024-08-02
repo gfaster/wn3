@@ -1,0 +1,99 @@
+# Book specifications are written in TOML
+# see: https://toml.io/en/
+
+# Required fields
+title = "Example Book"
+author = "Isle Osaki"
+homepage = "https://example.com"
+
+# Optional fields
+subtitle = "A thrilling adventure"
+translator = "Reigokai"
+# all resource urls can be file://
+# note: currently, only absolute paths for files are supported
+cover-image = "file://home/user/cover.png" 
+
+# Chapters are listed in the `content` array
+
+# If we only had a few chapters, we could do this:
+# content = [ "url1", "url2", ... ]
+# However, for more complex rules, it's more convenient to use different syntax
+
+[[content]]
+# single url
+url = "https://example.com/prologue/"
+
+[[content]]
+# range of urls. 
+# starts at `start` and keeps going until it reaches `end` (inclusive)
+start = "https://example.com/chapter_1/"
+end = "https://example.com/chapter_24/"
+
+[[content]]
+# can also specify an array of urls within one content element
+urls = [
+	"https://example.com/chapter_25/",
+	"https://example.com/chapter_26/",
+	"https://example.com/chapter_27/",
+]
+
+
+# Arcs/sections/volumes can be specified by the first url in the section
+[[sections]]
+start = "https://example.com/chapter_1/"
+title = "First Arc"
+
+[[sections]]
+start = "https://example.com/chapter_22/"
+title = "Second Arc"
+
+# =========  ADVANCED FEATURES  =========
+
+# if there is something different about some chapters, we can use overrides
+
+[[overrides]]
+url = "https://example.com/chapter_4/"
+title = "Chapter 4"
+
+[[overrides]]
+# urls are specified similar to `content` urls
+urls.start = "https://example.com/chapter_7/"
+urls.end = "https://example.com/chapter_10/"
+# override rules are inspired by sed(1) but with extra syntax for CSS selectors
+rules = [
+	# simple substitution, useful for when names change or fixing typos
+	#
+	# see https://docs.rs/regex/latest/regex/index.html#syntax for supported syntax
+	# note that currently, Unicode support is very limited and replacement is done literally
+	#
+	# this rule is all text matching the regex /Ruminas/ will be replaced with "Luminas".
+	"s/Ruminas/Luminas/",
+
+	# if we want to use regex escape sequences, we can use single quotes to prevent escapes
+	's/chapter \d+/ch/',
+
+	# if we use a semicolon (`;`), we can scope using a CSS level 4 compound selector
+	#
+	# this rule is within `<p>` and `<span>` tags, any occurance of `TLN`
+	# at the start of a text block will replaced with "Translator's Note"
+	"s;p, span/^TLN/Translator's Note/"
+]
+
+[[overrides]]
+urls = [
+	# overrides can overlap, but the order they're applied in is unspecified
+	"https://example.com/chapter_8/",
+	"https://example.com/chapter_13/"
+]
+rules = [
+	# the `d` directive can be used to delete tags
+	#
+	# this rule deletes any tag with the "advertisement" class
+	"d;.advertisement",
+
+	# we can also refine with regex
+	#
+	# this rule deletes any `<p>` tag with the text "Next Chaptr"
+	"d;p/Next Chaptr/"
+]
+

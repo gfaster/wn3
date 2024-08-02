@@ -3,6 +3,7 @@
 //! <https://www.w3.org/TR/epub/#sec-package-doc>
 
 use ahash::HashMap;
+use log::warn;
 use std::{rc::Rc, time::SystemTime};
 
 use fetch::MediaType;
@@ -177,6 +178,15 @@ impl OpfBuilder {
 
         if e.any() {
             return Err(e);
+        }
+
+        // various non-fatal warnings
+        if contributors
+            .iter()
+            .find(|c| c.0 == ContributorRole::Author)
+            .is_none()
+        {
+            warn!("opf has no author")
         }
 
         Ok(OpfSpec {

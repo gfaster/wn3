@@ -19,7 +19,7 @@ mod ratelimit;
 pub struct FetchContext {
     cache: Arc<Mutex<cache::ObjectCache>>,
     client: ureq::Agent,
-    offline: bool,
+    pub offline: bool,
 }
 
 impl FetchContext {
@@ -117,5 +117,44 @@ impl FetchContext {
         trace!("completed request to {domain:?}");
 
         Ok((resp_ty, bytes))
+    }
+
+    pub fn manual_set_cache(&self, url: &Url, contents: &[u8], ty: MediaType) -> Result<()> {
+        self.cache.lock().unwrap().set(url.as_str(), contents, ty)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offline_blocks_req() {
+        let a = FetchContext::new_cfg(
+            rusqlite::Connection::open_in_memory().unwrap(),
+            ureq::agent(),
+            true,
+        )
+        .unwrap();
+        let err = a.fetch(&"http://localhost".parse().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("offline is enabled"));
+    }
+
+    #[test]
+    fn offline_allows_cached() {
+        let a = FetchContext::new_cfg(
+            rusqlite::Connection::open_in_memory().unwrap(),
+            ureq::agent(),
+            true,
+        )
+        .unwrap();
+        let url: Url = "https://localhost".parse().unwrap();
+        let contents = "<!DOCTYPE html> <html> <head> </head> <body> </body> </html>";
+        a.manual_set_cache(&url, contents.as_bytes(), MediaType::Html)
+            .unwrap();
+        let (ty, res) = a.fetch(&url).unwrap();
+        assert_eq!(ty, MediaType::Html);
+        assert_eq!(res, contents.as_bytes());
     }
 }

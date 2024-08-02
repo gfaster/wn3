@@ -1,5 +1,6 @@
 use ahash::{HashMap, HashMapExt};
 use anyhow::{ensure, Context};
+use log::{log_enabled, warn};
 use url::Url;
 
 use crate::{
@@ -245,6 +246,19 @@ impl Display for MajorElement<'_> {
             }
             (MajorElement::Image(_), true) => todo!(),
             (MajorElement::Image(_), false) => todo!(),
+        }
+    }
+}
+
+impl MajorElement<'_> {
+    /// approx printed size in bytes
+    fn size(&self) -> usize {
+        match self {
+            MajorElement::Paragraph { elms, .. } => elms.iter().map(|e| e.size()).sum(),
+            MajorElement::Image(_) => 64,
+            MajorElement::ImageResolved(_) => 64,
+            MajorElement::SceneSep(l) => 8 + l.len(),
+            MajorElement::HorizLine => 8,
         }
     }
 }
@@ -636,12 +650,23 @@ impl<'a> ChapterBuilder<'a> {
         if error.any() {
             return Err(error);
         }
-        Ok(Chapter {
+        let title = self.title.unwrap();
+        let ret = Chapter {
             id: self.id,
             p: self.complete_p,
-            title: self.title.unwrap(),
+            title,
             rsc: self.resources_resolved.into_values().collect(),
-        })
+        };
+        if log_enabled!(log::Level::Warn) {
+            let kb = 2;
+            if ret.p.iter().any(|p| p.size() > 1024 * kb) {
+                warn!(
+                    "chapter `{}` contains extremely long paragraph (> {kb}KB)",
+                    ret.title
+                );
+            }
+        }
+        Ok(ret)
     }
 }
 

@@ -14,11 +14,17 @@ use wn3::{def::Section, overrides::OverrideTracker, *};
 
 mod logger;
 
+const EXAMPLE_CFG: &str = include_str!("example.toml");
+
 #[derive(Parser, Debug)]
 struct Args {
     /// input toml file
-    #[arg(short_alias = 'i', alias = "spec", required = true)]
-    spec: PathBuf,
+    #[arg(short_alias = 'i', alias = "spec", required_unless_present = "example")]
+    spec: Option<PathBuf>,
+
+    /// write example spec to stdout and then exit
+    #[arg(long)]
+    example: bool,
 
     #[arg(short, long, default_value = "output.epub")]
     output: PathBuf,
@@ -26,15 +32,19 @@ struct Args {
     #[arg(short, group = "verbosity", action = ArgAction::Count)]
     verbose: u8,
 
+    /// don't print any warnings or errors
     #[arg(short, long, group = "verbosity")]
     quiet: bool,
 
+    /// write each chapter as markdown to stdout
     #[arg(long)]
     dump: bool,
 
+    /// don't make any web requests
     #[arg(long)]
     offline: bool,
 
+    /// run `epubcheck` on the output
     #[arg(short, long)]
     check: bool,
 }
@@ -49,13 +59,26 @@ fn main() -> Result<()> {
         _ => bail!("maximum verbosity is 2 (-vv)"),
     }
 
+    if args.example {
+        println!("{EXAMPLE_CFG}");
+        return Ok(());
+    }
+
     build(&args)
 }
 
 fn build(args: &Args) -> Result<()> {
-    let f = std::fs::read_to_string(&args.spec)
-        .with_context(|| format!("failed to open spec {}", args.spec.display()))?;
-    let def: BookDef = toml::from_str(&f).context("failed to parse spec")?;
+    let spec = args
+        .spec
+        .as_deref()
+        .expect("spec is required if build is called");
+    let f = std::fs::read_to_string(spec)
+        .with_context(|| format!("failed to open spec {}", spec.display()))?;
+    let def = {
+        let mut def: BookDef = toml::from_str(&f).context("failed to parse spec")?;
+        def.file = Some(spec.into());
+        def
+    };
     def.validate().context("spec invalid")?;
     let rules = Rules::new_il();
     let mut book = generate::EpubBuilder::new();
@@ -66,6 +89,7 @@ fn build(args: &Args) -> Result<()> {
         .build();
     let cx = FetchContext::new_cfg(conn, client, args.offline).unwrap();
     book.set_title(def.title);
+    book.add_author(def.author);
     book.add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
     if let Some(tl) = def.translator {
         book.add_translator(tl);
@@ -257,5 +281,25 @@ mod tests {
     #[test]
     fn args_valid() {
         Args::command().debug_assert();
+    }
+
+    #[test]
+    fn example_is_valid_cfg() -> Result<()> {
+        let def: BookDef = toml::from_str(EXAMPLE_CFG)?;
+        def.validate().context("spec invalid")?;
+        Ok(())
+    }
+
+    #[test]
+    fn example_without_spec() {
+        Args::try_parse_from("prog --example".split_whitespace()).unwrap();
+        Args::try_parse_from("prog config.toml".split_whitespace()).unwrap();
+    }
+
+    #[ignore = "not working yet"]
+    #[test]
+    fn spec_flagged() -> Result<()> {
+        Args::try_parse_from("prog -o output.epub --spec=config.toml".split_whitespace())?;
+        Ok(())
     }
 }
