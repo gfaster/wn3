@@ -264,9 +264,16 @@ impl MajorElement<'_> {
 }
 
 #[derive(Debug, Clone)]
+pub struct Link<'a> {
+    pub href: Url,
+    pub text: Cow<'a, str>,
+}
+
+#[derive(Debug, Clone)]
 pub enum InlineElement<'a> {
     EnableStyles(SpanStyle),
     DisableStyles(SpanStyle),
+    ExternalLink(Rc<Link<'a>>),
     Text(&'a str),
     TextOwned(Box<str>),
     LineFeed,
@@ -281,6 +288,7 @@ impl InlineElement<'_> {
             InlineElement::Text(t) => t.len(),
             InlineElement::LineFeed => 6,
             InlineElement::TextOwned(t) => t.len(),
+            InlineElement::ExternalLink(l) => l.href.as_str().len() + l.text.len() + 8,
         }
     }
 }
@@ -316,6 +324,7 @@ impl Display for InlineElement<'_> {
                     write!(f, "{disp}")
                 }
                 InlineElement::LineFeed => write!(f, " "),
+                InlineElement::ExternalLink(l) => write!(f, "[{}]({})", EscapeMd(&l.text), l.href),
             }
         } else {
             match self {
@@ -340,6 +349,9 @@ impl Display for InlineElement<'_> {
                 }
                 InlineElement::LineFeed => {
                     writeln!(f, "<br />")?;
+                }
+                InlineElement::ExternalLink(l) => {
+                    write!(f, r#"<a href="{}">{}</a>"#, l.href, l.text)?;
                 }
             };
             Ok(())

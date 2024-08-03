@@ -175,7 +175,8 @@ fn finish(book: EpubBuilder, args: &Args) -> anyhow::Result<()> {
                 warn!("{e}");
             }
         } else {
-            warn!("could not run epubcheck")
+            error!("could not run epubcheck");
+            bail!("could not run epubcheck")
         }
     } else {
         debug!("epubcheck is disabled")
