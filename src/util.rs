@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 pub trait Implies {
     fn implies(self, other: bool) -> bool;
     fn implies_then<F: FnOnce() -> bool>(self, other: F) -> bool;
@@ -17,6 +18,7 @@ impl Implies for bool {
 }
 
 #[cfg(test)]
+#[allow(unused_imports)]
 pub use test_log::*;
 
 #[cfg(test)]

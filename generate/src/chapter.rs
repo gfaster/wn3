@@ -594,37 +594,6 @@ impl<'a> ChapterBuilder<'a> {
         Ok(())
     }
 
-    /// make sure we have all the images loaded - won't touch network
-    pub fn resolve_resources_local(&mut self, store: &fetch::FetchContext) -> anyhow::Result<()> {
-        // PERF: we don't deduplicate here, but probably should?
-        self.resources_resolved
-            .reserve(self.resources_unresolved.len());
-        for (url, img) in std::mem::take(&mut self.resources_unresolved) {
-            if self.resources_resolved.contains_key(&img.id()) {
-                continue;
-            }
-            let (ty, bytes) = store
-                .fetch_local(&url)
-                .context("failed fetching resource")?;
-            ensure!(ty.is_image(), "resolved type {ty:?} is not an image");
-            let img = img.resolve_with(ty, bytes);
-            self.resources_resolved.insert(img.id(), Rc::new(img));
-        }
-        // TODO: don't merge same url -> multiple alts
-        for el in &mut self.complete_p {
-            let MajorElement::Image(id) = el else {
-                continue;
-            };
-            *el = MajorElement::ImageResolved(
-                self.resources_resolved
-                    .get(id)
-                    .context("image was added without registration")?
-                    .clone(),
-            );
-        }
-        Ok(())
-    }
-
     /// note: content will not be trimmed
     pub fn add_text(&mut self, content: impl Into<Cow<'a, str>>) -> &mut Self {
         self.span_style_actualize();

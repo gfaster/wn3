@@ -7,6 +7,7 @@ use markup5ever::{
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
+use wn3::def::sed::Sed;
 
 use regex_lite::Regex;
 use scraper::{Html, Node, Selector};
@@ -36,11 +37,16 @@ fn args() -> (Html, ValidateRule) {
         xml,
         invariant_match,
         invariant_contain,
+        invariant_html,
+        overrider,
     } = Args::parse();
     let f = std::fs::read_to_string(file).unwrap();
     let mut next_must_be = None;
     let mut html = Html::parse_document(&f);
     drop(f);
+    for hsed in overrider {
+        hsed.apply_full_expensive(&mut html);
+    }
     if let Some(next) = next_url {
         next_must_be = Some(true);
 
@@ -79,6 +85,7 @@ fn args() -> (Html, ValidateRule) {
         contain_rules,
         next_must_be,
         serialization_style,
+        invariant_html,
     };
     (html, validate)
 }
@@ -91,31 +98,44 @@ struct Args {
 
     /// the generated chapter incorrectly does not match the regex (prefer no-contain for simple
     /// strings)
-    #[arg(long, value_parser = Regex::new)]
+    #[arg(long, value_parser = Regex::new, value_name = "REGEX")]
     no_match: Vec<Regex>,
 
     /// the generated chapter incorrectly matches the regex (prefer must-contain for simple
     /// strings)
-    #[arg(long, value_parser = Regex::new)]
+    #[arg(long, value_parser = Regex::new, value_name = "REGEX")]
     must_match: Vec<Regex>,
 
     /// the generated chapter correctly matches the regex and must continue to do so (prefer
     /// invariant-contain for simple strings)
-    #[arg(long, value_parser = Regex::new)]
+    #[arg(long, value_parser = Regex::new, value_name = "REGEX")]
     invariant_match: Vec<Regex>,
 
     /// the generated chapter incorrectly omits this string (prefer this over no-match)
-    #[arg(long)]
+    #[arg(long, value_name = "STRING")]
     no_contain: Vec<String>,
 
     /// the generated chapter incorrectly contains this string (prefer this over must-match)
-    #[arg(long)]
+    #[arg(long, value_name = "STRING")]
     must_contain: Vec<String>,
 
     /// the generated chapter correctly contains the string and must continue to do so (prefer
     /// this over invariant-match)
-    #[arg(long)]
+    #[arg(long, value_name = "STRING")]
     invariant_contain: Vec<String>,
+
+    /// Hsed matcher that must match html
+    ///
+    /// Basic syntax is `[; <CSS_SELECTORS>][/<REGEX>/]` where at least one is specified
+    #[arg(long, value_parser = Sed::new_matcher, value_name = "HSED")]
+    invariant_html: Vec<Sed>,
+
+    /// applies an override - see example config
+    ///
+    /// Note that this works differently from normal overrides as it actually changes the
+    /// underlying DOM. This is very slow for the generator, but it's fine here.
+    #[arg(long, value_parser = Sed::new, value_name = "HSED")]
+    overrider: Vec<Sed>,
 
     /// the next url is incorrectly found (it should be None)
     #[arg(long, group = "next")]
@@ -277,14 +297,9 @@ impl<T: CaseRule> CaseType<T> {
 
     fn as_assert(&self) -> String {
         let is_neg = matches!(self, CaseType::FailHas(_));
+        let negate = if is_neg { "!" } else { "" };
         let stmt = self.inner().as_text();
-        let msg = self.inner().fail_msg();
-        let msg = msg.escape_default();
-        if is_neg {
-            format!(r#"assert!(!{stmt}, "output {msg} incorrectly");"#)
-        } else {
-            format!(r#"assert!({stmt}, "output incorrectly {msg}");"#)
-        }
+        format!(r#"assert!({negate}{stmt});"#)
     }
 }
 
@@ -343,6 +358,10 @@ impl CaseRule for Regex {
 struct ValidateRule {
     regex_rules: Vec<CaseType<Regex>>,
     contain_rules: Vec<CaseType<String>>,
+
+    /// matchers that should always succeed on html
+    invariant_html: Vec<Sed>,
+
     /// should have next, url always replaced with `"https://example.com/not_next"`
     ///
     /// the test input transformation is valid if...
@@ -357,7 +376,7 @@ impl ValidateRule {
         let mut out = Vec::new();
         out.push("#[allow(unused)]".into());
         out.push(
-            r#"let (ch, next) = wn3::common::Rules::new().parse(&html).expect("failed to parse");"#
+            r#"let (ch, next) = wn3::common::Rules::new_il().parse(&html).expect("failed to parse");"#
                 .into(),
         );
 
@@ -393,6 +412,13 @@ impl ValidateRule {
             }
         }
 
+        for r in &self.invariant_html {
+            debug_assert!(r.is_matcher());
+            if !r.contains_match(&html.root_element()) {
+                return false;
+            }
+        }
+
         let txt = match self.serialization_style {
             SerStyle::Xml => format!("{ch}"),
             SerStyle::Markdown => format!("{ch:#}"),
@@ -412,7 +438,6 @@ impl ValidateRule {
         true
     }
 
-    #[allow(dead_code)]
     fn invalid_reasons(&self, html: &Html, rule: &Rules) -> Vec<String> {
         // need to serialize and re-parse because (I suspect) caching internally
         // This may be able to be avoid by adding a no-cache feature to scraper, but I'd have to
@@ -428,11 +453,19 @@ impl ValidateRule {
             }
         }
 
+        let mut ret = Vec::new();
+
+        for r in &self.invariant_html {
+            debug_assert!(r.is_matcher());
+            if !r.contains_match(&html.root_element()) {
+                ret.push(format!("failed invariant: {r}"))
+            }
+        }
+
         let txt = match self.serialization_style {
             SerStyle::Xml => format!("{ch}"),
             SerStyle::Markdown => format!("{ch:#}"),
         };
-        let mut ret = Vec::new();
         for r in &self.contain_rules {
             if !r.check(&txt) {
                 let neg = if r.check_is_neg() {
