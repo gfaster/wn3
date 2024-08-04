@@ -3,44 +3,116 @@ use std::{
     iter::{self, FusedIterator},
 };
 
+pub struct NopDisplay;
+impl Display for NopDisplay {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy)]
-pub struct Join<I> {
-    sep: &'static str,
+pub struct Join<I, Sep> {
+    sep: Sep,
     items: I,
 }
 
-impl<D, I> Display for Join<I>
+impl<D, Sep, I> Display for Join<I, Sep>
 where
     I: IntoIterator<Item = D> + Clone + Copy,
     D: Display,
+    Sep: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Join { items, sep } = *self;
+        let Join { items, ref sep } = *self;
         let mut it = items.into_iter();
         let Some(first) = it.next() else {
             return Ok(());
         };
         first.fmt(f)?;
         for item in it {
-            f.write_str(sep)?;
+            write!(f, "{sep}")?;
             item.fmt(f)?;
         }
         Ok(())
     }
 }
 
+#[allow(dead_code)]
 pub trait DispJoin<'a>
 where
     Self: 'a,
     &'a Self: IntoIterator,
     <&'a Self as IntoIterator>::Item: Display,
 {
-    fn disp_join(&'a self, sep: &'static str) -> Join<&'a Self>;
+    fn disp_join<Sep: Display>(&'a self, sep: Sep) -> Join<&'a Self, Sep>;
 }
 
 impl<'a, D: Display + 'a> DispJoin<'a> for [D] {
-    fn disp_join(&'a self, sep: &'static str) -> Join<&'a Self> {
+    fn disp_join<Sep: Display>(&'a self, sep: Sep) -> Join<&'a Self, Sep> {
         Join { sep, items: self }
+    }
+}
+
+pub struct MapJoin<I, Sep, F> {
+    sep: Sep,
+    items: I,
+    func: F,
+}
+
+impl<D, Sep, I, F> Display for MapJoin<I, Sep, F>
+where
+    I: IntoIterator + Clone + Copy,
+    F: Fn(I::Item) -> D,
+    D: Display,
+    Sep: Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let MapJoin {
+            items,
+            ref sep,
+            ref func,
+        } = *self;
+        let mut it = items.into_iter();
+        let Some(first) = it.next() else {
+            return Ok(());
+        };
+        func(first).fmt(f)?;
+        for item in it {
+            write!(f, "{sep}")?;
+            func(item).fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
+pub trait MapDispJoin<'a>
+where
+    Self: 'a,
+    &'a Self: IntoIterator,
+{
+    fn map_disp_join<Sep, F, D>(&'a self, sep: Sep, f: F) -> MapJoin<&'a Self, Sep, F>
+    where
+        Sep: Display,
+        D: Display,
+        F: Fn(<&'a Self as IntoIterator>::Item) -> D;
+}
+
+impl<'a, T> MapDispJoin<'a> for T
+where
+    T: 'a,
+    &'a T: IntoIterator,
+{
+    fn map_disp_join<Sep, F, D>(&'a self, sep: Sep, f: F) -> MapJoin<&T, Sep, F>
+    where
+        Sep: Display,
+        D: Display,
+        F: Fn(<&'a Self as IntoIterator>::Item) -> D,
+    {
+        MapJoin {
+            sep,
+            items: self,
+            func: f,
+        }
     }
 }
 
@@ -232,3 +304,18 @@ impl Display for EscapeMd<'_> {
         Ok(())
     }
 }
+
+// macro_rules! const_sep {
+//     ($s:expr) => {
+//         {
+//             struct D;
+//             impl std::fmt::Display for D {
+//                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//                     f.write_str($s)
+//                 }
+//             }
+//             D
+//         }
+//     };
+// }
+// pub(crate) use const_sep;

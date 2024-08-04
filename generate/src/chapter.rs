@@ -1,7 +1,10 @@
 use ahash::{HashMap, HashMapExt};
 use anyhow::{ensure, Context};
 use log::{log_enabled, warn};
+use ser::SerChapter;
 use url::Url;
+
+mod ser;
 
 use crate::{
     html_writer::*,
@@ -208,48 +211,6 @@ enum MajorElement<'a> {
     HorizLine,
 }
 
-impl Display for MajorElement<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (self, f.alternate()) {
-            (MajorElement::Paragraph { style, elms }, true) => {
-                let prefix = match style.mode {
-                    ParagraphMode::Normal => "",
-                    ParagraphMode::BlockQuote => "> ",
-                };
-                f.write_str(prefix)?;
-                let disp = elms.disp_join("");
-                disp.fmt(f)
-            }
-            (MajorElement::Paragraph { style, elms }, false) => {
-                let tag = match style.mode {
-                    ParagraphMode::Normal => "p",
-                    ParagraphMode::BlockQuote => "blockquote",
-                };
-                let disp = TagSurround::new(tag, elms.disp_join(""));
-                disp.fmt(f)
-            }
-            (MajorElement::ImageResolved(i), _) => i.fmt(f),
-            (MajorElement::HorizLine, true) => "---".fmt(f),
-            (MajorElement::HorizLine, false) => "<hr />".fmt(f),
-            (MajorElement::SceneSep(s), true) => {
-                if s.is_empty() {
-                    writeln!(f, "### ◇◇")
-                } else {
-                    writeln!(f, "### ◇ {s} ◇", s = EscapeMd(s))
-                }
-            }
-            (MajorElement::SceneSep(s), false) => {
-                let s = EscapeBody(s);
-                format_args!("◇ {s} ◇")
-                    .surround(r#"<h3 class="scene-sep">"#, "</h3>")
-                    .fmt(f)
-            }
-            (MajorElement::Image(_), true) => todo!(),
-            (MajorElement::Image(_), false) => todo!(),
-        }
-    }
-}
-
 impl MajorElement<'_> {
     /// approx printed size in bytes
     fn size(&self) -> usize {
@@ -302,86 +263,12 @@ impl<'a> From<Cow<'a, str>> for InlineElement<'a> {
     }
 }
 
-impl Display for InlineElement<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if f.alternate() {
-            match self {
-                InlineElement::EnableStyles(style) | InlineElement::DisableStyles(style) => {
-                    let surround = match (style.bold, style.italic) {
-                        (true, true) => "***",
-                        (true, false) => "**",
-                        (false, true) => "*",
-                        (false, false) => "",
-                    };
-                    write!(f, "{surround}")
-                }
-                InlineElement::Text(text) => {
-                    let disp = EscapeMd(text);
-                    write!(f, "{disp}")
-                }
-                InlineElement::TextOwned(text) => {
-                    let disp = EscapeMd(text);
-                    write!(f, "{disp}")
-                }
-                InlineElement::LineFeed => write!(f, " "),
-                InlineElement::ExternalLink(l) => write!(f, "[{}]({})", EscapeMd(&l.text), l.href),
-            }
-        } else {
-            match self {
-                Self::EnableStyles(s) | Self::DisableStyles(s) if s.is_none() => {
-                    unreachable!("empty style transition is invalid and should never be created")
-                }
-                Self::EnableStyles(s) => {
-                    for el in s.el_iter() {
-                        write!(f, "{}", el.open())?
-                    }
-                }
-                Self::DisableStyles(s) => {
-                    for el in s.el_iter().rev() {
-                        write!(f, "{}", el.close())?
-                    }
-                }
-                Self::Text(txt) => {
-                    write!(f, "{}", EscapeBody(txt))?;
-                }
-                Self::TextOwned(txt) => {
-                    write!(f, "{}", EscapeBody(txt))?;
-                }
-                InlineElement::LineFeed => {
-                    writeln!(f, "<br />")?;
-                }
-                InlineElement::ExternalLink(l) => {
-                    write!(f, r#"<a href="{}">{}</a>"#, l.href, l.text)?;
-                }
-            };
-            Ok(())
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Chapter<'a> {
     id: u32,
     title: Box<str>,
     pub(crate) rsc: Vec<Rc<ResolvedImage>>,
     p: Vec<MajorElement<'a>>,
-}
-
-impl Display for Chapter<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Chapter { title, p, .. } = self;
-        if f.alternate() {
-            let title = EscapeMd(title);
-            writeln!(f, "# {title}")?;
-            writeln!(f)?;
-            p.disp_join("\n\n").fmt(f)?;
-        } else {
-            let title = EscapeBody(title).surround_tag("h2");
-            writeln!(f, "{title}")?;
-            p.disp_join("\n").fmt(f)?;
-        }
-        Ok(())
-    }
 }
 
 impl Chapter<'_> {
@@ -397,6 +284,14 @@ impl Chapter<'_> {
             }
         }
         D(self.id)
+    }
+
+    pub fn xml(&self) -> impl Display + '_ {
+        ser::xml::Xml.disp(self)
+    }
+
+    pub fn md(&self) -> impl Display + '_ {
+        ser::md::Md.disp(self)
     }
 
     /// approximate size in bytes - tries to be an overestimate
@@ -667,7 +562,7 @@ mod test {
         let expected = "\
             <h2>it works</h2>\n\
             <p>hello, <b>world</b>!</p>";
-        assert_eq!(format!("{chapter}"), expected);
+        assert_eq!(chapter.xml().to_string(), expected);
     }
 
     #[test]
@@ -688,7 +583,7 @@ mod test {
             <p>hello, world<b>!</b></p>\n\
             <p>paragraph 2</p>\n\
             <p>paragraph 3</p>";
-        assert_eq!(format!("{chapter}"), expected);
+        assert_eq!(chapter.xml().to_string(), expected);
     }
 
     #[test]
@@ -710,7 +605,7 @@ mod test {
         let expected = "\
             <h2>transitions</h2>\n\
             <p>aaa<b><i>bbb</i>ccc</b><i>ddd</i><b>eeefff</b>ggghhh</p>";
-        assert_eq!(format!("{chapter}"), expected);
+        assert_eq!(chapter.xml().to_string(), expected);
     }
 
     #[test]
@@ -732,6 +627,6 @@ mod test {
             hello, world**!**\n\n\
             paragraph 2\n\n\
             paragraph 3";
-        assert_eq!(format!("{chapter:#}"), expected);
+        assert_eq!(chapter.md().to_string(), expected);
     }
 }

@@ -420,8 +420,8 @@ impl ValidateRule {
         }
 
         let txt = match self.serialization_style {
-            SerStyle::Xml => format!("{ch}"),
-            SerStyle::Markdown => format!("{ch:#}"),
+            SerStyle::Xml => ch.xml().to_string(),
+            SerStyle::Markdown => ch.md().to_string(),
         };
 
         for r in &self.contain_rules {
@@ -463,8 +463,8 @@ impl ValidateRule {
         }
 
         let txt = match self.serialization_style {
-            SerStyle::Xml => format!("{ch}"),
-            SerStyle::Markdown => format!("{ch:#}"),
+            SerStyle::Xml => ch.xml().to_string(),
+            SerStyle::Markdown => ch.md().to_string(),
         };
         for r in &self.contain_rules {
             if !r.check(&txt) {
@@ -496,7 +496,7 @@ impl ValidateRule {
             "html:\n{}\n\noutput:\n{}\n\nfailed patterns: {:#?}",
             html.html(),
             rule.parse(html)
-                .map_or_else(|_| "FAILED TO PARSE".into(), |(ch, _)| format!("{ch:#}")),
+                .map_or_else(|_| "FAILED TO PARSE".into(), |(ch, _)| ch.md().to_string()),
             self.invalid_reasons(html, rule)
         )
     }

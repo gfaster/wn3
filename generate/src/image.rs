@@ -83,21 +83,33 @@ pub struct ResolvedImage {
     pub(crate) data: Bytes,
 }
 
-impl Display for ResolvedImage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let alt = self.alt.as_deref().unwrap_or("an image without alt text");
-        let src = self.src();
-        if f.alternate() {
-            let alt = EscapeMd(alt);
-            write!(f, "![{alt}]({src})")
-        } else {
-            let alt = EscapeAttr(alt);
-            write!(f, r#"<img src="{src}" alt="{alt}" />"#)
-        }
-    }
-}
-
 impl ResolvedImage {
+    pub fn display_md(&self) -> impl Display + '_ {
+        struct D<'a>(&'a ResolvedImage);
+        impl std::fmt::Display for D<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let alt = self.0.alt.as_deref().unwrap_or("an image without alt text");
+                let src = self.0.src();
+                let alt = EscapeMd(alt);
+                write!(f, "![{alt}]({src})")
+            }
+        }
+        D(self)
+    }
+
+    pub fn display_xml(&self) -> impl Display + '_ {
+        struct D<'a>(&'a ResolvedImage);
+        impl std::fmt::Display for D<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let alt = self.0.alt.as_deref().unwrap_or("an image without alt text");
+                let src = self.0.src();
+                let alt = EscapeAttr(alt);
+                write!(f, r#"<img src="{src}" alt="{alt}" />"#)
+            }
+        }
+        D(self)
+    }
+
     pub fn manifest_item(&self) -> ManifestItem {
         ManifestItem::new_explicit(self.src().to_string(), self.media_type)
     }

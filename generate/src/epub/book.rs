@@ -297,7 +297,7 @@ fn write_chunk(w: impl Write, chunk: &[Chapter]) -> io::Result<()> {
         let mut body = html.mkel("body", [])?;
         for chapter in chunk {
             body.mkel("section", [("id", &*chapter.id().to_string())])?
-                .write_field(chapter)?;
+                .write_field(chapter.xml())?;
         }
     }
     doc.finish()

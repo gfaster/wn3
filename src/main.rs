@@ -232,7 +232,7 @@ fn fetch_range(
             None
         };
         if cx.args.dump {
-            println!("{ch:#}")
+            println!("{}", ch.md())
         }
         book.add_chapter(ch);
         ensure!(
