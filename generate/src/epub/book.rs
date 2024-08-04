@@ -4,7 +4,7 @@ use fetch::FetchContext;
 use log::error;
 use std::{
     collections::hash_map::Entry,
-    io::{self, prelude::*},
+    io::{self, prelude::*, BufWriter},
     rc::Rc,
 };
 use url::Url;
@@ -23,11 +23,18 @@ use crate::{
 
 use super::package::{ContributorRole, IdentifierType, OpfBuilder};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Compression {
+    Store,
+    Deflate,
+}
+
 pub struct EpubBuilder<'a> {
     opf: OpfBuilder,
     chapters: Vec<Chapter<'a>>,
     cover: Option<Rc<ResolvedImage>>,
     additional_resources: HashMap<ImageId, Rc<ResolvedImage>>,
+    compression: Compression,
     chunk_size: usize,
 }
 
@@ -39,6 +46,7 @@ impl<'a> EpubBuilder<'a> {
             chunk_size: 0,
             additional_resources: HashMap::new(),
             cover: None,
+            compression: Compression::Deflate,
         }
     }
 
@@ -62,6 +70,11 @@ impl<'a> EpubBuilder<'a> {
             }
         }
         Ok(self)
+    }
+
+    pub fn set_compression(&mut self, compression: Compression) -> &mut Self {
+        self.compression = compression;
+        self
     }
 
     /// set the number of chapters that are combined to a single file via total bytes. If
@@ -136,13 +149,17 @@ impl<'a> EpubBuilder<'a> {
 
     pub fn finish(mut self, mut w: impl Read + Write + Seek) -> io::Result<()> {
         w.seek(io::SeekFrom::Start(0))?;
+        let w = BufWriter::new(w);
         assert!(!self.chapters.is_empty());
 
         let mut zip = ZipWriter::new(w);
         let stored =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        let compressed =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let method = match self.compression {
+            Compression::Store => zip::CompressionMethod::Stored,
+            Compression::Deflate => zip::CompressionMethod::Deflated,
+        };
+        let compressed = SimpleFileOptions::default().compression_method(method);
         zip.start_file("mimetype", stored)?;
         zip.write_all(b"application/epub+zip")?;
         zip.add_directory("EPUB", stored)?;
@@ -204,8 +221,8 @@ impl<'a> EpubBuilder<'a> {
 
         zip.start_file("EPUB/package.opf", stored)?;
         spec.write(&mut zip)?;
-        zip.flush()?;
-        zip.finish()?;
+        let mut w = zip.finish()?;
+        w.flush()?;
 
         Ok(())
     }

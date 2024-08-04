@@ -46,8 +46,8 @@ scraper = {git = "https://github.com/gfaster/scraper.git"}
 
 
 [profile.release]
-strip = true
-# debug = true
+# strip = true
+debug = true
 
 [features]
 

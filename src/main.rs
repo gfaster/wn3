@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use ahash::HashMap;
 use anyhow::{bail, ensure, Context, Result};
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
 use common::Rules;
 use def::BookDef;
 use fetch::FetchContext;
@@ -47,6 +47,26 @@ struct Args {
     /// run `epubcheck` on the output
     #[arg(short, long)]
     check: bool,
+
+    /// compression used for zip content
+    #[arg(short = 'z', long, default_value_t = Compression::Deflate)]
+    compression: Compression,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum Compression {
+    Store,
+    Deflate,
+}
+
+impl std::fmt::Display for Compression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Compression::Store => "store",
+            Compression::Deflate => "deflate",
+        }
+        .fmt(f)
+    }
 }
 
 fn main() -> Result<()> {
@@ -57,6 +77,9 @@ fn main() -> Result<()> {
         1 => log::set_max_level(log::LevelFilter::Debug),
         2 => log::set_max_level(log::LevelFilter::Trace),
         _ => bail!("maximum verbosity is 2 (-vv)"),
+    }
+    if args.quiet {
+        log::set_max_level(log::LevelFilter::Off);
     }
 
     if args.example {
@@ -88,9 +111,15 @@ fn build(args: &Args) -> Result<()> {
         .user_agent("wn-scraper3/0.0.1 (github.com/gfaster)")
         .build();
     let fetch = FetchContext::new_cfg(conn, client, args.offline).unwrap();
-    book.set_title(def.title);
-    book.add_author(def.author);
-    book.add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
+    book.set_title(def.title)
+        .add_author(def.author)
+        .add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
+    let compress = match args.compression {
+        Compression::Store => generate::epub::Compression::Store,
+        Compression::Deflate => generate::epub::Compression::Deflate,
+    };
+    book.set_compression(compress);
+
     if let Some(tl) = def.translator {
         book.add_translator(tl);
     }

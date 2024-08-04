@@ -34,10 +34,10 @@ impl log::Log for SimpleLogger {
     fn flush(&self) {}
 }
 
-use log::{LevelFilter, SetLoggerError};
+use log::SetLoggerError;
 
 static LOGGER: SimpleLogger = SimpleLogger;
 
 pub fn init() -> Result<(), SetLoggerError> {
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
+    log::set_logger(&LOGGER)
 }
