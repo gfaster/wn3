@@ -11,7 +11,7 @@ fn the_raven() -> Chapter<'static> {
         b.add_text(stanza).paragraph_finish();
     }
 
-    b.finish().unwrap()
+    b.finish().unwrap().swap_remove(0)
 }
 
 fn a_dream_within_a_dream() -> Chapter<'static> {
@@ -23,7 +23,7 @@ fn a_dream_within_a_dream() -> Chapter<'static> {
         b.add_text(stanza).paragraph_finish();
     }
 
-    b.finish().unwrap()
+    b.finish().unwrap().swap_remove(0)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

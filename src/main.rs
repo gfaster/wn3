@@ -263,9 +263,11 @@ fn fetch_range(
             None
         };
         if cx.args.dump {
-            println!("{}", ch.md())
+            for ch in &ch {
+                println!("{}\n", ch.md())
+            }
         }
-        book.add_chapter(ch);
+        book.extend_chapters(ch);
         ensure!(
             prev.is_none() || prev != next,
             "url {} was repeated",

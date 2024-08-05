@@ -45,8 +45,8 @@ ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
 
 
 [profile.release]
-strip = true
-# debug = true
+# strip = true
+debug = true
 
 [features]
 

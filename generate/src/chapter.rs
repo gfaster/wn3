@@ -311,13 +311,16 @@ impl Chapter<'_> {
     }
 }
 
+/// Builder for [`Chapter`].
+///
+/// Can be reused for creating multiple chapters with a single builder.
 #[derive(Debug)]
 pub struct ChapterBuilder<'a> {
     id: u32,
     pub title: Option<Box<str>>,
-
     pub paragraph_style: ParagraphStyle,
     pub span_style: SpanStyle,
+
     span_style_actual: SpanStyle,
     pub preserve_line_feeds: bool,
     pub(crate) resources_unresolved: HashMap<Arc<str>, Image>,
@@ -325,8 +328,12 @@ pub struct ChapterBuilder<'a> {
 
     current_p: Vec<InlineElement<'a>>,
 
+    /// I might want to reconsider the concept of a major element entirely. It produces a ton of
+    /// cache misses. It doesn't end up being a ton of cycles, but it accounts for about half of
+    /// the total time spent in free(3)
     complete_p: Vec<MajorElement<'a>>,
-    // referenced_resources: HashSet<&'a str>,
+
+    complete_ch: Vec<Chapter<'a>>,
 }
 
 #[derive(Debug)]
@@ -385,6 +392,7 @@ impl<'a> ChapterBuilder<'a> {
             preserve_line_feeds: false,
             resources_unresolved: HashMap::new(),
             resources_resolved: HashMap::new(),
+            complete_ch: Vec::new(),
         }
     }
 
@@ -516,22 +524,31 @@ impl<'a> ChapterBuilder<'a> {
         self
     }
 
-    pub fn finish(mut self) -> Result<Chapter<'a>, ChapterBuilderError> {
+    pub fn finish(mut self) -> Result<Vec<Chapter<'a>>, ChapterBuilderError> {
+        self.finish_reuse()?;
+        Ok(self.complete_ch)
+    }
+
+    /// complete the current chapter and store the chapter to an internal buffer
+    ///
+    /// Note that calling `finish` immediately after is an error
+    pub fn finish_reuse(&mut self) -> Result<(), ChapterBuilderError> {
         self.paragraph_finish();
+        let mut ch = std::mem::take(self);
         let error = ChapterBuilderError {
-            missing_title: self.title.is_none(),
-            empty: self.complete_p.is_empty(),
-            unresolved_resources: !self.resources_unresolved.is_empty(),
+            missing_title: ch.title.is_none(),
+            empty: ch.complete_p.is_empty(),
+            unresolved_resources: !ch.resources_unresolved.is_empty(),
         };
         if error.any() {
             return Err(error);
         }
-        let title = self.title.unwrap();
+        let title = ch.title.unwrap();
         let ret = Chapter {
-            id: self.id,
-            p: self.complete_p,
+            id: ch.id,
+            p: ch.complete_p,
             title,
-            rsc: self.resources_resolved.into_values().collect(),
+            rsc: ch.resources_resolved.into_values().collect(),
         };
         if log_enabled!(log::Level::Warn) {
             let kb = 2;
@@ -542,7 +559,9 @@ impl<'a> ChapterBuilder<'a> {
                 );
             }
         }
-        Ok(ret)
+        ch.complete_ch.push(ret);
+        self.complete_ch = ch.complete_ch;
+        Ok(())
     }
 }
 
@@ -562,7 +581,7 @@ mod test {
         let expected = "\
             <h2>it works</h2>\n\
             <p>hello, <b>world</b>!</p>";
-        assert_eq!(chapter.xml().to_string(), expected);
+        assert_eq!(chapter[0].xml().to_string(), expected);
     }
 
     #[test]
@@ -583,7 +602,7 @@ mod test {
             <p>hello, world<b>!</b></p>\n\
             <p>paragraph 2</p>\n\
             <p>paragraph 3</p>";
-        assert_eq!(chapter.xml().to_string(), expected);
+        assert_eq!(chapter[0].xml().to_string(), expected);
     }
 
     #[test]
@@ -605,7 +624,7 @@ mod test {
         let expected = "\
             <h2>transitions</h2>\n\
             <p>aaa<b><i>bbb</i>ccc</b><i>ddd</i><b>eeefff</b>ggghhh</p>";
-        assert_eq!(chapter.xml().to_string(), expected);
+        assert_eq!(chapter[0].xml().to_string(), expected);
     }
 
     #[test]
@@ -627,6 +646,6 @@ mod test {
             hello, world**!**\n\n\
             paragraph 2\n\n\
             paragraph 3";
-        assert_eq!(chapter.md().to_string(), expected);
+        assert_eq!(chapter[0].md().to_string(), expected);
     }
 }

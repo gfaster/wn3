@@ -93,6 +93,16 @@ impl<'a> EpubBuilder<'a> {
         self
     }
 
+    pub fn extend_chapters(
+        &mut self,
+        chapters: impl IntoIterator<Item = Chapter<'a>>,
+    ) -> &mut Self {
+        for ch in chapters {
+            self.add_chapter(ch);
+        }
+        self
+    }
+
     pub fn set_title(&mut self, title: impl Into<StrLang>) -> &mut Self {
         self.opf.title = Some(title.into());
         self
@@ -171,11 +181,18 @@ impl<'a> EpubBuilder<'a> {
         zip.start_file("META-INF/container.xml", stored)?;
         zip.write_all(CONTAINER_XML.as_bytes())?;
 
-        // chunks here are just splitting the chapters into small enough files
+        // chunks here are just splitting the chapters into small enough files. I have this being a
+        // little silly here because I want to check later if too-small chapters cause problems.
         let chunks: Vec<_> = self
             .chapters
+            // .iter()
+            // .map(|ch| std::slice::from_ref(ch))
             .chunk_by({
-                let mut size = self.chapters[0].size();
+                let mut size = if self.chunk_size > 0 {
+                    self.chapters[0].size()
+                } else {
+                    0
+                };
                 move |_l, r| {
                     let rsz = r.size();
                     if size >= self.chunk_size {

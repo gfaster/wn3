@@ -7,7 +7,7 @@ fn generated() {
     let (ch, next) = wn3::common::Rules::new_il()
         .parse(&html)
         .expect("failed to parse");
-    let t = ch.md().to_string();
+    let t = ch[0].md().to_string();
     println!("==== begin output ====\n{t}\n====  end output  ====");
     assert!(t.contains("# Chapter 95: Part 2"));
 }

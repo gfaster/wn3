@@ -45,7 +45,7 @@ impl Rules {
         Self::new(crate::shikka::Rule::new())
     }
 
-    pub fn parse<'a>(&self, html: &'a Html) -> Result<(Chapter<'a>, Option<&'a str>)> {
+    pub fn parse<'a>(&self, html: &'a Html) -> Result<(Vec<Chapter<'a>>, Option<&'a str>)> {
         self.parse_with_overrides(html, &OverrideSet::empty(), None)
     }
 
@@ -54,7 +54,7 @@ impl Rules {
         html: &'a Html,
         overrides: &OverrideSet<'_>,
         store: Option<&FetchContext>,
-    ) -> Result<(Chapter<'a>, Option<&'a str>)> {
+    ) -> Result<(Vec<Chapter<'a>>, Option<&'a str>)> {
         let mut ch = ChapterBuilder::new();
         let title = if let Some(title) = &overrides.title {
             title.to_owned()
