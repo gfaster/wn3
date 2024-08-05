@@ -32,7 +32,7 @@ url.workspace = true
 ureq.workspace = true
 rusqlite.workspace = true
 
-scraper = "0.19.1"
+scraper = "0.20.0"
 serde = { version = "1.0.204", features = ["derive"] }
 toml = "0.8.15"
 regex-lite = "0.1.6"
@@ -42,12 +42,11 @@ ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
 
 [patch.crates-io]
 ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
-scraper = {git = "https://github.com/gfaster/scraper.git"}
 
 
 [profile.release]
-# strip = true
-debug = true
+strip = true
+# debug = true
 
 [features]
 
