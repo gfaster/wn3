@@ -80,6 +80,10 @@ impl Rules {
     }
 }
 
+pub struct ProcessConfig {
+    pub br_is_paragraph: bool,
+}
+
 /// basic processing of "normal" blocks
 ///
 /// does:
@@ -87,9 +91,14 @@ impl Rules {
 /// - handles styling
 /// - handles `<hr>` and similar horizontal separators
 /// - converts `<br>` tags to LF for setting-specific handling
-pub fn add_basic<'a>(ch: &mut ChapterBuilder<'a>, el: ElementRef<'a>, overrides: &OverrideSet) {
+pub fn add_basic<'a>(
+    ch: &mut ChapterBuilder<'a>,
+    el: ElementRef<'a>,
+    overrides: &OverrideSet,
+    config: &ProcessConfig,
+) {
     let mut enabled: Vec<_> = overrides.replacers().map(|_| 0).collect();
-    descend(ch, *el, overrides, &mut enabled, 1);
+    descend(ch, *el, overrides, config, &mut enabled, 1);
 }
 
 /// enabled is the level that the corresponding override was enabled at. enabled == 0 means it's
@@ -98,6 +107,7 @@ fn descend<'a>(
     ch: &mut ChapterBuilder<'a>,
     el: NodeRef<'a, Node>,
     overrides: &OverrideSet,
+    config: &ProcessConfig,
     enabled: &mut [u32],
     level: u32,
 ) {
@@ -167,7 +177,7 @@ fn descend<'a>(
                         ch.span_style += SpanStyle::bold();
                     }
                     for child in el.children() {
-                        descend(ch, child, overrides, enabled, level + 1);
+                        descend(ch, child, overrides, config, enabled, level + 1);
                     }
                     ch.span_style_set(prev_style);
                     if e.name() == "p" {

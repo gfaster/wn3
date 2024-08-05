@@ -5,7 +5,7 @@ use regex_lite::Regex;
 use scraper::{ElementRef, Html, Selector};
 
 use crate::{
-    common::{add_basic, is_hr, RuleSet},
+    common::{add_basic, is_hr, ProcessConfig, RuleSet},
     overrides::OverrideSet,
 };
 
@@ -122,6 +122,9 @@ impl RuleSet for Reigokai {
         let filter = |el: &ElementRef| !self.simple_exclude(el, overrides);
         let mut it = html.select(&self.p_sel).filter(filter);
         let first = it.clone().next().context("no paragraphs")?;
+        let pcfg = ProcessConfig {
+            br_is_paragraph: false,
+        };
         if self.cfg.strip_fwd_tln
             && first
                 .text()
@@ -172,7 +175,7 @@ impl RuleSet for Reigokai {
                 let scene = sep.get(1).map_or("", |m| m.as_str().trim());
                 ch.add_scene_sep(scene);
             } else {
-                add_basic(ch, el, overrides)
+                add_basic(ch, el, overrides, &pcfg)
             }
         }
         Ok(())

@@ -3,7 +3,7 @@ use generate::Chapter;
 use scraper::{ElementRef, Html, Selector};
 
 use crate::{
-    common::{add_basic, RuleSet},
+    common::{add_basic, ProcessConfig, RuleSet},
     overrides::OverrideSet,
 };
 
@@ -81,6 +81,9 @@ impl RuleSet for Rule {
         ch: &mut generate::ChapterBuilder<'a>,
     ) -> Result<()> {
         let _ = self.cfg;
+        let pcfg = ProcessConfig {
+            br_is_paragraph: false,
+        };
         let filter = |el: &ElementRef| !self.simple_exclude(el);
         let it = html.select(&self.p_sel).filter(filter);
         let _first = it.clone().next().context("no paragraphs")?;
@@ -88,7 +91,7 @@ impl RuleSet for Rule {
             if self.simple_exclude(&el) {
                 continue;
             }
-            add_basic(ch, el, overrides)
+            add_basic(ch, el, overrides, &pcfg)
         }
         Ok(())
     }

@@ -16,6 +16,8 @@ mod logger;
 
 const EXAMPLE_CFG: &str = include_str!("example.toml");
 
+// NOTE 2024-08-05: I tried Jemalloc and it was slightly slower
+
 #[derive(Parser, Debug)]
 struct Args {
     /// input toml file
