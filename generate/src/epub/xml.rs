@@ -34,7 +34,7 @@ impl<W: Write> XmlSink<W> {
         Ok(ret)
     }
 
-    fn w(&mut self) -> io::Result<&mut dyn Write> {
+    fn w(&mut self) -> io::Result<&mut W> {
         if !self.queue.is_empty() {
             self.w.write_all(self.queue.as_bytes())?;
             self.queue.clear();

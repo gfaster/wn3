@@ -322,7 +322,7 @@ fn write_chunk(w: impl Write, chunk: &[Chapter]) -> io::Result<()> {
                 "link",
                 [
                     ("href", "css/epub.css"),
-                    ("type", "text/epub.css"),
+                    ("type", "text/css"),
                     ("rel", "stylesheet"),
                 ],
             )?;

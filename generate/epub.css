@@ -1,15 +1,15 @@
 @namespace epub "http://www.idpf.org/2007/ops";
 
-body {
+html {
     color: rgb(0,0,0);
-    font-family: "Karla",Tahoma,sans-serif;
+    font-family: "Athelas",serif;
     background-color: rgb(255,255,255);
     margin: 0.5em 1em 0 0.5em;
     border: 0;
     padding: 0;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1 {
     text-align: center;
 }
 
@@ -18,9 +18,13 @@ h2 {
     padding-top: 3em
 }
 
-h3 {
-	page-break-before: always;
+section[epub|type~='chapter'] > *:last-of-type {
+	page-break-after: always;
 }
+
+/* h3 { */
+/* 	page-break-before: always; */
+/* } */
 
 .subhd {
 	display: block;
