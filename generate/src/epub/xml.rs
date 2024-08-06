@@ -111,6 +111,16 @@ impl<'a, W: Write> Element<'a, W> {
     }
 }
 
+impl<W: Write> Write for Element<'_, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.sink.w()?.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.sink.w()?.flush()
+    }
+}
+
 impl<W> Drop for Element<'_, W> {
     fn drop(&mut self) {
         use std::fmt::Write;

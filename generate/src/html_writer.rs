@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Display},
-    iter::{self, FusedIterator},
-};
+use std::fmt::{self, Display};
 
 pub struct NopDisplay;
 impl Display for NopDisplay {
@@ -116,6 +113,52 @@ where
     }
 }
 
+pub struct TupleJoin<Tuple>(Tuple);
+
+impl<T: Display, U: Display> Display for TupleJoin<(T, U)> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (t, u) = &self.0;
+        write!(f, "{t}{u}")
+    }
+}
+
+impl<T: Display, U: Display> Display for TupleJoin<&(T, U)> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (t, u) = &self.0;
+        write!(f, "{t}{u}")
+    }
+}
+
+impl<T: Display, U: Display, V: Display> Display for TupleJoin<(T, U, V)> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (t, u, v) = &self.0;
+        write!(f, "{t}{u}{v}")
+    }
+}
+
+impl<T: Display, U: Display, V: Display> Display for TupleJoin<&(T, U, V)> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (t, u, v) = &self.0;
+        write!(f, "{t}{u}{v}")
+    }
+}
+
+#[allow(dead_code)]
+pub trait TupleDispJoin: Sized {
+    fn tuple_display_join(self) -> TupleJoin<Self>;
+}
+
+impl<T: Display, U: Display> TupleDispJoin for (T, U) {
+    fn tuple_display_join(self) -> TupleJoin<Self> {
+        TupleJoin(self)
+    }
+}
+impl<T: Display, U: Display, V: Display> TupleDispJoin for (T, U, V) {
+    fn tuple_display_join(self) -> TupleJoin<Self> {
+        TupleJoin(self)
+    }
+}
+
 // impl<I> DispJoin for I
 //     where
 //     I: IntoIterator + Clone + Copy,
@@ -129,51 +172,21 @@ where
 //     }
 // }
 
-pub trait StrArr<'a>: Clone + Copy {
-    type StrIt: Iterator<Item = &'a str> + DoubleEndedIterator + ExactSizeIterator + FusedIterator;
-
-    fn str_arr(self) -> Self::StrIt;
-}
-
-impl<'a> StrArr<'a> for &'a [&'a str] {
-    type StrIt = iter::Copied<std::slice::Iter<'a, &'a str>>;
-
-    fn str_arr(self) -> Self::StrIt {
-        self.iter().copied()
-    }
-}
-
-impl<'a> StrArr<'a> for &'a str {
-    type StrIt = iter::Once<&'a str>;
-
-    fn str_arr(self) -> Self::StrIt {
-        iter::once(self)
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct TagSurround<D, A> {
     tags: A,
     content: D,
 }
 
-impl<'a, D, A: StrArr<'a>> TagSurround<D, A> {
-    pub fn new(tags: A, content: D) -> Self {
-        Self { tags, content }
-    }
-}
-
-impl<'a, D: Display, A: StrArr<'a>> Display for TagSurround<D, A> {
+impl<D: Display, T: Tag> Display for TagSurround<D, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for tag in self.tags.str_arr() {
-            debug_assert!(!tag.is_empty(), "cannot have empty tags");
-            write!(f, "<{tag}>")?;
-        }
-        write!(f, "{}", self.content)?;
-        for tag in self.tags.str_arr().rev() {
-            write!(f, "</{tag}>")?;
-        }
-        Ok(())
+        write!(
+            f,
+            "{}{}{}",
+            self.tags.open(),
+            self.content,
+            self.tags.close()
+        )
     }
 }
 
@@ -194,13 +207,35 @@ impl<'a, D: Display> Display for Surround<'a, D> {
     }
 }
 
+// type Surround<'a, D> = SurroundDisp<&'a str, &'a str, D>;
+
+pub struct SurroundDisp<Open, Close, Content> {
+    open: Open,
+    close: Close,
+    content: Content,
+}
+
+impl<Open: Display, Close: Display, Content: Display> Display
+    for SurroundDisp<Open, Close, Content>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let SurroundDisp {
+            open,
+            close,
+            content,
+        } = self;
+        write!(f, "{open}{content}{close}")
+    }
+}
+
 #[allow(dead_code)]
 pub trait SurroundExt: Display + Sized {
     fn surround<'a>(self, open: &'a str, close: &'a str) -> Surround<'a, Self>;
-    fn surround_tag<'a, A: StrArr<'a>>(self, tags: A) -> TagSurround<Self, A>;
+    fn surround_disp<O: Display, C: Display>(self, open: O, close: C) -> SurroundDisp<O, C, Self>;
+    fn surround_tag<'a, T: Tag>(self, tags: T) -> TagSurround<Self, T>;
 }
 
-impl<T: Display + Sized> SurroundExt for T {
+impl<D: Display + Sized> SurroundExt for D {
     fn surround<'a>(self, open: &'a str, close: &'a str) -> Surround<'a, Self> {
         Surround {
             open,
@@ -209,10 +244,98 @@ impl<T: Display + Sized> SurroundExt for T {
         }
     }
 
-    fn surround_tag<'a, A: StrArr<'a>>(self, tags: A) -> TagSurround<Self, A> {
+    fn surround_tag<'a, T: Tag>(self, tags: T) -> TagSurround<Self, T> {
         TagSurround {
             tags,
             content: self,
+        }
+    }
+
+    fn surround_disp<O: Display, C: Display>(self, open: O, close: C) -> SurroundDisp<O, C, Self> {
+        SurroundDisp {
+            open,
+            close,
+            content: self,
+        }
+    }
+}
+
+struct WrapClose<'a>(&'a str);
+impl Display for WrapClose<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "</{}>", self.0)
+    }
+}
+
+pub trait Tag {
+    fn open(&self) -> impl Display + '_;
+    fn close(&self) -> impl Display + '_;
+}
+
+impl Tag for &str {
+    fn open(&self) -> impl Display + '_ {
+        struct D<'a>(&'a str);
+        impl Display for D<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "<{}>", self.0)
+            }
+        }
+        D(self)
+    }
+
+    fn close(&self) -> impl Display + '_ {
+        WrapClose(&self)
+    }
+}
+
+/// warning: does not escape!
+///
+/// I'm not at all convinced this is not slower
+pub struct Tag2<A1, A2> {
+    name: &'static str,
+    k1: &'static str,
+    a1: A1,
+    k2: &'static str,
+    a2: A2,
+}
+
+impl<A1: Display, A2: Display> Tag for Tag2<A1, A2> {
+    fn open(&self) -> impl Display + '_ {
+        struct D<'a, A1, A2>(&'a Tag2<A1, A2>);
+        impl<A1: Display, A2: Display> Display for D<'_, A1, A2> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let Tag2 {
+                    name,
+                    k1,
+                    a1,
+                    k2,
+                    a2,
+                } = self.0;
+                write!(f, r#"<{name} {k1}="{a1}" {k2}="{a2}">"#)
+            }
+        }
+        D(self)
+    }
+
+    fn close(&self) -> impl Display + '_ {
+        WrapClose(self.name)
+    }
+}
+
+impl<A1: Display, A2: Display> Tag2<A1, A2> {
+    pub const fn new(
+        name: &'static str,
+        k1: &'static str,
+        a1: A1,
+        k2: &'static str,
+        a2: A2,
+    ) -> Self {
+        Self {
+            name,
+            k1,
+            a1,
+            k2,
+            a2,
         }
     }
 }

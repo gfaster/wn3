@@ -578,9 +578,14 @@ mod test {
             .add_text_styled("world", SpanStyle::bold())
             .add_text("!");
         let chapter = builder.finish().unwrap();
-        let expected = "\
+        let expected = format!(
+            "\
+            <section epub:type=\"chapter\" id=\"{}\">\n\
             <h2>it works</h2>\n\
-            <p>hello, <b>world</b>!</p>";
+            <p>hello, <b>world</b>!</p>\n\
+            </section>",
+            chapter[0].id()
+        );
         assert_eq!(chapter[0].xml().to_string(), expected);
     }
 
@@ -597,11 +602,16 @@ mod test {
             .paragraph_finish()
             .add_text("paragraph 3");
         let chapter = builder.finish().unwrap();
-        let expected = "\
+        let expected = format!(
+            "\
+            <section epub:type=\"chapter\" id=\"{}\">\n\
             <h2>multiple paragraphs</h2>\n\
             <p>hello, world<b>!</b></p>\n\
             <p>paragraph 2</p>\n\
-            <p>paragraph 3</p>";
+            <p>paragraph 3</p>\n\
+            </section>",
+            chapter[0].id()
+        );
         assert_eq!(chapter[0].xml().to_string(), expected);
     }
 
@@ -621,9 +631,14 @@ mod test {
             .add_text("ggg")
             .add_text("hhh");
         let chapter = builder.finish().unwrap();
-        let expected = "\
+        let expected = format!(
+            "\
+            <section epub:type=\"chapter\" id=\"{}\">\n\
             <h2>transitions</h2>\n\
-            <p>aaa<b><i>bbb</i>ccc</b><i>ddd</i><b>eeefff</b>ggghhh</p>";
+            <p>aaa<b><i>bbb</i>ccc</b><i>ddd</i><b>eeefff</b>ggghhh</p>\n\
+            </section>",
+            chapter[0].id()
+        );
         assert_eq!(chapter[0].xml().to_string(), expected);
     }
 

@@ -1,4 +1,4 @@
-use crate::chapter::{MapDispJoin, SurroundExt, TagSurround};
+use crate::chapter::{MapDispJoin, NopDisplay, SurroundExt};
 use std::fmt::Display;
 
 use crate::{
@@ -19,8 +19,14 @@ impl Display for XmlChapter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Chapter { title, p, .. } = self.0;
         let title = EscapeBody(title).surround_tag("h2");
+        writeln!(
+            f,
+            r#"<section epub:type="chapter" id="{id}">"#,
+            id = self.0.id()
+        )?;
         writeln!(f, "{title}")?;
-        p.map_disp_join("\n", |p| XmlMajor(p)).fmt(f)
+        writeln!(f, "{}", p.map_disp_join('\n', |p| XmlMajor(p)))?;
+        write!(f, "</section>")
     }
 }
 
@@ -28,15 +34,20 @@ struct XmlInline<'a>(&'a InlineElement<'a>);
 impl Display for XmlInline<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
-            InlineElement::EnableStyles(s) | InlineElement::DisableStyles(s) if s.is_none() => {
-                unreachable!("empty style transition is invalid and should never be created")
-            }
             InlineElement::EnableStyles(s) => {
+                debug_assert!(
+                    !s.is_none(),
+                    "empty style transition is invalid and should never be created"
+                );
                 for el in s.el_iter() {
                     write!(f, "{}", el.open())?
                 }
             }
             InlineElement::DisableStyles(s) => {
+                debug_assert!(
+                    !s.is_none(),
+                    "empty style transition is invalid and should never be created"
+                );
                 for el in s.el_iter().rev() {
                     write!(f, "{}", el.close())?
                 }
@@ -67,8 +78,10 @@ impl Display for XmlMajor<'_> {
                     ParagraphMode::Normal => "p",
                     ParagraphMode::BlockQuote => "blockquote",
                 };
-                let disp = TagSurround::new(tag, elms.map_disp_join("", |e| XmlInline(e)));
-                disp.fmt(f)
+
+                elms.map_disp_join(NopDisplay, |e| XmlInline(e))
+                    .surround_tag(tag)
+                    .fmt(f)
             }
             MajorElement::ImageResolved(i) => i.display_xml().fmt(f),
             MajorElement::HorizLine => "<hr />".fmt(f),
