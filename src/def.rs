@@ -24,6 +24,7 @@ pub struct BookDef {
     pub title: StrLang,
     #[serde(deserialize_with = "langde::strlang_de")]
     pub author: StrLang,
+    pub ruleset: Option<String>,
     pub subtitle: Option<String>,
     pub homepage: Url,
     pub cover_image: Option<Url>,

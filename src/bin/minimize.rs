@@ -163,7 +163,7 @@ fn main() {
 
     let (html, validator) = args();
 
-    let rules = Rules::new_il();
+    let rules = Rules::new_from_name("reigokai").unwrap();
     let html = minimize(&validator, html, &rules);
 
     println!("minimization complete:");
@@ -403,7 +403,7 @@ impl ValidateRule {
             return false;
         };
         if let Some(next_must_be) = self.next_must_be {
-            match (next_must_be, next) {
+            match (next_must_be, next.as_deref()) {
                 (true, Some("https://example.com/not_next")) | (false, None) => (),
                 (false, Some(_)) | (true, _) => return false,
             }
@@ -444,7 +444,7 @@ impl ValidateRule {
             return vec!["failed to parse".into()];
         };
         if let Some(next_must_be) = self.next_must_be {
-            match (next_must_be, next) {
+            match (next_must_be, next.as_deref()) {
                 (true, Some("https://example.com/not_next")) | (false, None) => (),
                 (false, Some(_)) | (true, _) => todo!(),
             }

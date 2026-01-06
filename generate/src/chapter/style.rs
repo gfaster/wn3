@@ -1,6 +1,8 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct SpanStyle {
     pub(super) bold: bool,
+    // TODO: distinguish between italics and emphasis (I learned after I originally wrote this that
+    // they are in fact different)
     pub(super) italic: bool,
     pub(super) footnote: bool,
 }

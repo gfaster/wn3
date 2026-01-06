@@ -323,6 +323,7 @@ impl<A1: Display, A2: Display> Tag for Tag2<A1, A2> {
 }
 
 impl<A1: Display, A2: Display> Tag2<A1, A2> {
+    #[expect(dead_code)]
     pub const fn new(
         name: &'static str,
         k1: &'static str,

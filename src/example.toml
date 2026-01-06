@@ -18,6 +18,10 @@ author.ja = "大崎アイル"
 
 homepage = "https://example.com"
 
+# Which general ruleset to use. Currently only specialized rulesets are
+# implemented.
+ruleset = "generic"
+
 # =========  OPTIONAL FIELDS  =========
 
 language = "en" # defaults to en (english)

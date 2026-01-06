@@ -4,7 +4,8 @@ const HTML: &str = "<!DOCTYPE html><html><head></head><div class=\"entry-content
 fn generated() {
     let html = scraper::Html::parse_document(HTML);
     #[allow(unused)]
-    let (ch, next) = wn3::common::Rules::new_il()
+    let (ch, next) = wn3::common::Rules::new_from_name("reigokai")
+        .unwrap()
         .parse(&html)
         .expect("failed to parse");
     let t = ch[0].md().to_string();

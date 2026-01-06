@@ -25,6 +25,10 @@ impl OverrideSet<'_> {
         self.seds.is_empty() && self.title.is_none()
     }
 
+    pub fn should_delete(&self, el: &scraper::ElementRef) -> bool {
+        self.replacers().any(|r| r.should_delete(el))
+    }
+
     pub fn replacers(&self) -> impl Iterator<Item = &sed::Sed> {
         self.seds.iter().flat_map(|x| x.as_ref())
     }

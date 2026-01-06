@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use anyhow::{Context, Result};
 use generate::Chapter;
 use log::{debug, warn};
@@ -104,9 +106,9 @@ impl RuleSet for Reigokai {
             .to_owned()
     }
 
-    fn next_chapter<'a>(&self, html: &'a Html) -> Option<&'a str> {
+    fn next_chapter<'a>(&self, html: &'a Html) -> Option<Cow<'a, str>> {
         let el = html.select(&self.next_sel).last()?;
-        el.attr("href")
+        el.attr("href").map(Cow::Borrowed)
     }
 
     fn parse_multichapter_page<'a>(&self, _html: &'a Html) -> Result<Chapter<'a>> {

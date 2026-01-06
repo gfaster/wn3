@@ -105,12 +105,20 @@ fn build(args: &Args) -> Result<()> {
         def
     };
     def.validate().context("spec invalid")?;
-    let rules = Rules::new_il();
+    let rules = {
+        let Some(ruleset) = def.ruleset.as_deref() else {
+            todo!("default ruleset")
+        };
+        let Some(rules) = Rules::new_from_name(ruleset) else {
+            bail!("Unknown ruleset: `{ruleset}`")
+        };
+        rules
+    };
     let mut book = generate::EpubBuilder::new();
     let conn = rusqlite::Connection::open("cache.db")?;
     let client = ureq::AgentBuilder::new()
         .https_only(true)
-        .user_agent("wn-scraper3/0.0.1 (github.com/gfaster)")
+        .user_agent("wn-scraper3/0.0.1 (+https://github.com/gfaster)")
         .build();
     let fetch = FetchContext::new_cfg(conn, client, args.offline).unwrap();
     book.set_title(def.title)
@@ -256,9 +264,9 @@ fn fetch_range(
         let (ch, next) = cx
             .rules
             .parse_with_overrides(html, &overrides, Some(&cx.fetch))
-            .context("failed to build chapter")?;
+            .with_context(|| format!("failed to build chapter {curr}"))?;
         let next = if let Some(next) = next {
-            Some(Url::parse(next).context("invalid url")?)
+            Some(Url::parse(&next).context("invalid url")?)
         } else {
             None
         };

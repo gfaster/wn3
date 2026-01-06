@@ -14,7 +14,7 @@ use crate::overrides::OverrideSet;
 
 pub trait RuleSet {
     fn title(&self, html: &Html) -> String;
-    fn next_chapter<'a>(&self, html: &'a Html) -> Option<&'a str>;
+    fn next_chapter<'a>(&self, html: &'a Html) -> Option<Cow<'a, str>>;
     fn parse_body<'a>(
         &self,
         html: &'a Html,
@@ -37,15 +37,19 @@ impl Rules {
         }
     }
 
-    pub fn new_il() -> Self {
-        Self::new(crate::il::Reigokai::new())
+    pub fn new_from_name(name: &str) -> Option<Self> {
+        use crate::rulesets::*;
+        let rules = match name {
+            "reigokai" => Self::new(il::Reigokai::new()),
+            "syosetu" => Self::new(syosetu::Rule::new()),
+            "shikka" => Self::new(shikka::Rule::new()),
+            _ => return None,
+        };
+
+        Some(rules)
     }
 
-    pub fn new_shikka() -> Self {
-        Self::new(crate::shikka::Rule::new())
-    }
-
-    pub fn parse<'a>(&self, html: &'a Html) -> Result<(Vec<Chapter<'a>>, Option<&'a str>)> {
+    pub fn parse<'a>(&self, html: &'a Html) -> Result<(Vec<Chapter<'a>>, Option<Cow<'a, str>>)> {
         self.parse_with_overrides(html, &OverrideSet::empty(), None)
     }
 
@@ -54,7 +58,7 @@ impl Rules {
         html: &'a Html,
         overrides: &OverrideSet<'_>,
         store: Option<&FetchContext>,
-    ) -> Result<(Vec<Chapter<'a>>, Option<&'a str>)> {
+    ) -> Result<(Vec<Chapter<'a>>, Option<Cow<'a, str>>)> {
         let mut ch = ChapterBuilder::new();
         let title = if let Some(title) = &overrides.title {
             title.to_owned()
@@ -154,7 +158,7 @@ fn descend<'a>(
                     ch.add_text("\n");
                 }
                 "ol" | "ul" | "li" => {
-                    warn!("TODO: handle lists");
+                    warn!(target: "parsing", "TODO: handle lists");
                 }
                 "img" => {
                     let Some(src) = e.attr("src") else {
@@ -169,6 +173,12 @@ fn descend<'a>(
                 }
                 "script" => (),
                 _ => {
+                    if e.name() == "ruby" {
+                        // the nice thing about ruby elements is that if we just ignore them they
+                        // somewhat work out
+                        warn!(target: "parsing", "TODO: handle ruby elements");
+                    }
+
                     let prev_style = ch.span_style;
                     if is_italics_tag(e) {
                         ch.span_style += SpanStyle::italic();

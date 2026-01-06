@@ -12,7 +12,7 @@ use crate::{
     html_writer::*,
     image::{Image, ImageId, ResolvedImage},
 };
-use std::{borrow::Cow, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
+use std::{borrow::Cow, fmt::Display, rc::Rc, sync::Arc};
 
 #[derive(Debug)]
 enum MajorElement<'a> {
@@ -306,7 +306,23 @@ impl<'a> ChapterBuilder<'a> {
             if self.resources_resolved.contains_key(&img.id()) {
                 continue;
             }
-            let url: Url = url.deref().try_into().context("failed to parse url")?;
+            let url: Url = {
+                // yet another thing I didn't know was possible: implicit protocol, seen in the
+                // wild at https://ncode.syosetu.com/n1217et/1/
+                let mut buf: String;
+                let url: &str = if url.starts_with("//") {
+                    buf = String::with_capacity("https:".len() + url.len());
+                    buf.push_str("https:");
+                    buf.push_str(&url);
+                    &buf
+                } else if url.starts_with("/") {
+                    todo!("absolute path urls in resource resolution")
+                } else {
+                    &url
+                };
+                url.try_into()
+                    .with_context(|| format!("failed to parse url {url:?}"))?
+            };
             let (ty, bytes) = store.fetch(&url).context("failed fetching resource")?;
             ensure!(ty.is_image(), "resolved type {ty:?} is not an image");
             let img = img.resolve_with(ty, bytes);

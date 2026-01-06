@@ -15,6 +15,11 @@ use url::Url;
 
 mod ratelimit;
 
+/// Delay between two requests being sent to the same domain
+///
+/// 65 is a good respectful default (60 seems to cause a sort of race)
+const CRAWL_DELAY: Duration = Duration::from_secs(15);
+
 #[derive(Clone)]
 pub struct FetchContext {
     cache: Arc<Mutex<cache::ObjectCache>>,
@@ -85,8 +90,7 @@ impl FetchContext {
         let domain = url.domain().unwrap();
         trace!("getting in line to access {}", domain);
 
-        // we use 65 seconds to avoid connection closed before message completed errors
-        wait_your_turn(domain, Duration::from_secs(65));
+        wait_your_turn(domain, CRAWL_DELAY);
         info!("fetching url {url}");
 
         let res = self.client.request_url("GET", url).call();
