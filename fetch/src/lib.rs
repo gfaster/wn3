@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use bytes::Bytes;
 use log::{info, trace};
 use ratelimit::wait_your_turn;

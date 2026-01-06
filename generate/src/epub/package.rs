@@ -7,7 +7,7 @@ use log::warn;
 use std::{rc::Rc, time::SystemTime};
 
 use fetch::MediaType;
-use time::{format_description, OffsetDateTime};
+use time::{OffsetDateTime, format_description};
 
 use crate::{
     lang::{Lang, StrLang},
@@ -21,6 +21,7 @@ pub struct OpfBuilder {
     pub subtitle: OptSetting,
     pub publisher: OptSetting,
     pub date: SystemTime,
+    pub include_toc: bool,
 
     /// list of identifiers according to <http://purl.org/dc/terms/identifier>
     ///
@@ -96,6 +97,7 @@ impl OpfBuilder {
             manifest: Vec::new(),
             identifiers: Vec::new(),
             contributors: Vec::new(),
+            include_toc: false,
         }
     }
 
@@ -114,6 +116,7 @@ impl OpfBuilder {
             manifest,
             identifiers,
             contributors,
+            include_toc,
         } = self;
         let mut e = OpfError {
             no_nav: false,
@@ -199,7 +202,10 @@ impl OpfBuilder {
                 ((Rc::clone(&id), m), id)
             })
             .collect();
-        spine.retain(|i| manifest[i].media_type == MediaType::Xhtml);
+        spine.retain(|i| {
+            manifest[i].media_type == MediaType::Xhtml
+                && (include_toc || !manifest[i].props.contains(ManifestProperties::NAV))
+        });
         if manifest.len() != manifest_len {
             e.duplicate_manifest_item = true;
         }

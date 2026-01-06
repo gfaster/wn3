@@ -27,11 +27,11 @@ impl RateLimit {
 
     pub fn acquire(&self) {
         let mut lock = self.interval.lock().unwrap();
-        let (last, ref dur) = lock.deref_mut();
+        let &mut (ref mut last, dur) = lock.deref_mut();
         let now = Instant::now();
         let elapsed = now.duration_since(*last);
-        if elapsed < *dur {
-            let wait = *dur - elapsed;
+        if elapsed < dur {
+            let wait = dur - elapsed;
             info!("waiting for {:.2} seconds", wait.as_secs_f32());
             std::thread::sleep(wait);
             *last = Instant::now();

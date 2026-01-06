@@ -1,6 +1,6 @@
 use serde::{
-    de::{self, Visitor},
     Deserialize,
+    de::{self, Visitor},
 };
 use url::Url;
 

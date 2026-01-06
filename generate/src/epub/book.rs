@@ -4,11 +4,11 @@ use fetch::FetchContext;
 use log::error;
 use std::{
     collections::hash_map::Entry,
-    io::{self, prelude::*, BufWriter},
+    io::{self, BufWriter, prelude::*},
     rc::Rc,
 };
 use url::Url;
-use zip::{write::SimpleFileOptions, ZipWriter};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 use crate::{
     chapter::Chapter,
@@ -77,6 +77,14 @@ impl<'a> EpubBuilder<'a> {
         self
     }
 
+    /// Whether or not to include table of contents.
+    ///
+    /// default is `false`
+    pub fn include_toc(&mut self, include_toc: bool) -> &mut Self {
+        self.opf.include_toc = include_toc;
+        self
+    }
+
     /// set the number of chapters that are combined to a single file via total bytes. If
     /// size is 0, then each chapter will get its own file.
     ///
@@ -112,6 +120,13 @@ impl<'a> EpubBuilder<'a> {
         self.opf
             .contributors
             .push((ContributorRole::Author, author.into()));
+        self
+    }
+
+    pub fn add_editor(&mut self, editor: impl Into<StrLang>) -> &mut Self {
+        self.opf
+            .contributors
+            .push((ContributorRole::Editor, editor.into()));
         self
     }
 

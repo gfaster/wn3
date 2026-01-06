@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use crate::{
-    chapter::{EscapeMd, InlineElement, MajorElement, MapDispJoin, NopDisplay, ParagraphMode},
     Chapter,
+    chapter::{EscapeMd, InlineElement, MajorElement, MapDispJoin, NopDisplay, ParagraphMode},
 };
 
 #[derive(Debug, Clone, Copy)]

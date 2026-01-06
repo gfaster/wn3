@@ -43,10 +43,10 @@ impl<W: Write> XmlSink<W> {
     }
 
     pub fn mkel<'a>(
-        &'a mut self,
+        &mut self,
         name: &'static str,
         attrs: impl IntoIterator<Item = (&'a str, &'a str)>,
-    ) -> io::Result<Element<W>> {
+    ) -> io::Result<Element<'_, W>> {
         self.write_el_start(name, attrs, false)?;
         Ok(Element { sink: self, name })
     }

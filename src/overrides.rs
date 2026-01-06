@@ -4,7 +4,7 @@ use ahash::{HashMap, HashMapExt, HashSet};
 use log::debug;
 use url::Url;
 
-use crate::def::{self, sed, UrlSelection};
+use crate::def::{self, UrlSelection, sed};
 
 pub struct OverrideSet<'a> {
     seds: Vec<Rc<[sed::Sed]>>,

@@ -2,8 +2,9 @@ use clap::Parser;
 use ego_tree::NodeId;
 use markup5ever::namespace_url;
 use markup5ever::{
-    interface::{tree_builder::TreeSink, NodeOrText},
-    ns, LocalName, QualName,
+    LocalName, QualName,
+    interface::{NodeOrText, tree_builder::TreeSink},
+    ns,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -288,11 +289,7 @@ impl<T: CaseRule> CaseType<T> {
     /// note that CaseType doesn't implement CaseRule because CaseType is what does the inverting
     fn check(&self, rendered: &str) -> bool {
         let res = self.inner().satisfies(rendered);
-        if self.check_is_neg() {
-            !res
-        } else {
-            res
-        }
+        if self.check_is_neg() { !res } else { res }
     }
 
     fn as_assert(&self) -> String {

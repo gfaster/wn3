@@ -5,10 +5,10 @@ use std::borrow::Cow;
 use anyhow::{Context, Result};
 use ego_tree::NodeRef;
 use fetch::FetchContext;
-use generate::{chapter::SpanStyle, image::Image, Chapter, ChapterBuilder};
+use generate::{Chapter, ChapterBuilder, chapter::SpanStyle, image::Image};
 use log::{trace, warn};
 use regex_lite::Regex;
-use scraper::{node::Element, ElementRef, Html, Node};
+use scraper::{ElementRef, Html, Node, node::Element};
 
 use crate::overrides::OverrideSet;
 

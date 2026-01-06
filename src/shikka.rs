@@ -3,7 +3,7 @@ use generate::Chapter;
 use scraper::{ElementRef, Html, Selector};
 
 use crate::{
-    common::{add_basic, ProcessConfig, RuleSet},
+    common::{ProcessConfig, RuleSet, add_basic},
     overrides::OverrideSet,
 };
 

@@ -1,5 +1,5 @@
 use ahash::{HashMap, HashMapExt};
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use log::{log_enabled, warn};
 use ser::SerChapter;
 use url::Url;
@@ -146,6 +146,9 @@ pub struct ChapterBuilder<'a> {
     /// I might want to reconsider the concept of a major element entirely. It produces a ton of
     /// cache misses. It doesn't end up being a ton of cycles, but it accounts for about half of
     /// the total time spent in free(3)
+    ///
+    /// Right now, the only thing stopping me from making this completely flat is that I suspect it
+    /// will be more error prone
     complete_p: Vec<MajorElement<'a>>,
 
     complete_ch: Vec<Chapter<'a>>,

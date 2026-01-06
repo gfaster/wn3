@@ -2,8 +2,8 @@ use crate::chapter::{MapDispJoin, NopDisplay, SurroundExt};
 use std::fmt::Display;
 
 use crate::{
-    chapter::{EscapeBody, InlineElement, MajorElement, ParagraphMode},
     Chapter,
+    chapter::{EscapeBody, InlineElement, MajorElement, ParagraphMode},
 };
 
 #[derive(Debug, Clone, Copy)]

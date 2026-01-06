@@ -1,7 +1,7 @@
 use std::io::prelude::Read;
 
 use bytes::Bytes;
-use rusqlite::{blob::Blob, Connection, OptionalExtension, Result};
+use rusqlite::{Connection, OptionalExtension, Result, blob::Blob};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

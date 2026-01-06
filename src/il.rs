@@ -5,7 +5,7 @@ use regex_lite::Regex;
 use scraper::{ElementRef, Html, Selector};
 
 use crate::{
-    common::{add_basic, is_hr, ProcessConfig, RuleSet},
+    common::{ProcessConfig, RuleSet, add_basic, is_hr},
     overrides::OverrideSet,
 };
 

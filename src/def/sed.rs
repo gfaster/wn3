@@ -21,7 +21,7 @@
 use std::{borrow::Cow, str::FromStr};
 
 use ahash::{HashSet, HashSetExt};
-use anyhow::{anyhow, bail, ensure, Context};
+use anyhow::{Context, anyhow, bail, ensure};
 use log::{debug, info, log_enabled, trace};
 use regex_lite::{NoExpand, Regex};
 use scraper::{ElementRef, Html, Selector, StrTendril};

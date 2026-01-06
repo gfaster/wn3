@@ -18,7 +18,7 @@ h2 {
     padding-top: 3em
 }
 
-section[epub|type~='chapter'] > *:last-of-type {
+section[epub|type~='chapter'] > *:last-child {
 	page-break-after: always;
 }
 

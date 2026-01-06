@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use ahash::HashMap;
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use clap::{ArgAction, Parser, ValueEnum};
 use common::Rules;
 use def::BookDef;
 use fetch::FetchContext;
-use generate::{image::Image, EpubBuilder};
+use generate::{EpubBuilder, image::Image};
 use log::{debug, error, info, warn};
 use scraper::Html;
 use url::Url;

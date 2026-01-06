@@ -1,7 +1,7 @@
-use generate::lang::{Lang, StrLang, ALL_LANGS_STR};
+use generate::lang::{ALL_LANGS_STR, Lang, StrLang};
 use serde::{
-    de::{self, Visitor},
     Deserialize, Deserializer,
+    de::{self, Visitor},
 };
 
 struct StrLangV;

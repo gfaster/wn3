@@ -132,7 +132,7 @@ impl StrLang {
     ) -> Result<(), LangItemExistsError> {
         match &mut self.0 {
             StrLangInner::Single((old_lang, _)) if *old_lang == lang => {
-                return Err(LangItemExistsError)
+                return Err(LangItemExistsError);
             }
             StrLangInner::Single((first_lang, first_s)) => {
                 let first_s = std::mem::take(first_s);

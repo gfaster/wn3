@@ -99,7 +99,7 @@ where
     T: 'a,
     &'a T: IntoIterator,
 {
-    fn map_disp_join<Sep, F, D>(&'a self, sep: Sep, f: F) -> MapJoin<&T, Sep, F>
+    fn map_disp_join<Sep, F, D>(&self, sep: Sep, f: F) -> MapJoin<&T, Sep, F>
     where
         Sep: Display,
         D: Display,
