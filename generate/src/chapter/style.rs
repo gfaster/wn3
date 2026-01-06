@@ -5,12 +5,18 @@ pub struct SpanStyle {
     // they are in fact different)
     pub(super) italic: bool,
     pub(super) footnote: bool,
+    pub(super) ruby: bool,
+    pub(super) ruby_rt: bool,
+    pub(super) ruby_rp: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SpanStyleEl {
     Bold,
     Italic,
+    Ruby,
+    RubyRt,
+    RubyRp,
     Footnote,
 }
 
@@ -20,6 +26,9 @@ impl SpanStyleEl {
             SpanStyleEl::Bold => "<b>",
             SpanStyleEl::Italic => "<i>",
             SpanStyleEl::Footnote => r#"<aside role="doc-footnote">"#,
+            SpanStyleEl::Ruby => "<ruby>",
+            SpanStyleEl::RubyRt => "<rt>",
+            SpanStyleEl::RubyRp => "<rp>",
         }
     }
 
@@ -28,6 +37,9 @@ impl SpanStyleEl {
             SpanStyleEl::Bold => "</b>",
             SpanStyleEl::Italic => "</i>",
             SpanStyleEl::Footnote => "</aside>",
+            SpanStyleEl::Ruby => "</ruby>",
+            SpanStyleEl::RubyRt => "</rt>",
+            SpanStyleEl::RubyRp => "</rp>",
         }
     }
 }
@@ -47,6 +59,18 @@ impl From<SpanStyleEl> for SpanStyle {
                 footnote: true,
                 ..SpanStyle::none()
             },
+            SpanStyleEl::Ruby => SpanStyle {
+                ruby: true,
+                ..SpanStyle::none()
+            },
+            SpanStyleEl::RubyRt => SpanStyle {
+                ruby_rt: true,
+                ..SpanStyle::none()
+            },
+            SpanStyleEl::RubyRp => SpanStyle {
+                ruby_rp: true,
+                ..SpanStyle::none()
+            },
         }
     }
 }
@@ -57,6 +81,9 @@ impl SpanStyle {
             bold: false,
             italic: false,
             footnote: false,
+            ruby: false,
+            ruby_rt: false,
+            ruby_rp: false,
         }
     }
 
@@ -66,7 +93,10 @@ impl SpanStyle {
             SpanStyle {
                 bold: false,
                 italic: false,
-                footnote: false
+                footnote: false,
+                ruby: false,
+                ruby_rt: false,
+                ruby_rp: false,
             }
         )
     }
@@ -76,6 +106,9 @@ impl SpanStyle {
             self.bold.then_some(SpanStyleEl::Bold),
             self.italic.then_some(SpanStyleEl::Italic),
             self.footnote.then_some(SpanStyleEl::Footnote),
+            self.ruby.then_some(SpanStyleEl::Ruby),
+            self.ruby_rt.then_some(SpanStyleEl::RubyRt),
+            self.ruby_rp.then_some(SpanStyleEl::RubyRp),
         ]
         .into_iter()
         .flatten()
@@ -95,6 +128,27 @@ impl SpanStyle {
         }
     }
 
+    pub const fn ruby() -> Self {
+        SpanStyle {
+            ruby: true,
+            ..Self::none()
+        }
+    }
+
+    pub const fn ruby_rt() -> Self {
+        SpanStyle {
+            ruby_rt: true,
+            ..Self::none()
+        }
+    }
+
+    pub const fn ruby_rp() -> Self {
+        SpanStyle {
+            ruby_rp: true,
+            ..Self::none()
+        }
+    }
+
     pub const fn bold_italic() -> Self {
         SpanStyle {
             bold: true,
@@ -105,20 +159,26 @@ impl SpanStyle {
 
     /// styles needed to be enabled to get to `to`
     pub(super) const fn additional_needed(self, to: Self) -> Self {
-        Self {
-            bold: !self.bold & to.bold,
-            italic: !self.italic & to.italic,
-            footnote: !self.footnote & to.footnote,
+        macro_rules! fields {
+            ($($field:ident)*) => {
+                Self {
+                    $($field: !self.$field & to.$field,)*
+                }
+            };
         }
+        fields!(bold italic footnote ruby ruby_rt ruby_rp)
     }
 
     /// styles needed to be disabled to get to `to`
     pub(super) const fn removals_needed(self, to: Self) -> Self {
-        Self {
-            bold: self.bold & !to.bold,
-            italic: self.italic & !to.italic,
-            footnote: self.footnote & !to.footnote,
+        macro_rules! fields {
+            ($($field:ident)*) => {
+                Self {
+                    $($field: self.$field & !to.$field,)*
+                }
+            };
         }
+        fields!(bold italic footnote ruby ruby_rt ruby_rp)
     }
 }
 
@@ -132,11 +192,14 @@ impl std::ops::Add for SpanStyle {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            bold: self.bold | rhs.bold,
-            italic: self.italic | rhs.italic,
-            footnote: self.footnote | rhs.footnote,
+        macro_rules! fields {
+            ($($field:ident)*) => {
+                Self {
+                    $($field: self.$field | rhs.$field,)*
+                }
+            };
         }
+        fields!(bold italic footnote ruby ruby_rt ruby_rp)
     }
 }
 

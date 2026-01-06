@@ -173,13 +173,16 @@ fn descend<'a>(
                 }
                 "script" => (),
                 _ => {
-                    if e.name() == "ruby" {
-                        // the nice thing about ruby elements is that if we just ignore them they
-                        // somewhat work out
-                        warn!(target: "parsing", "TODO: handle ruby elements");
-                    }
-
                     let prev_style = ch.span_style;
+                    if e.name() == "ruby" {
+                        ch.span_style += SpanStyle::ruby();
+                    }
+                    if e.name() == "rt" {
+                        ch.span_style += SpanStyle::ruby_rt();
+                    }
+                    if e.name() == "rp" {
+                        ch.span_style += SpanStyle::ruby_rp();
+                    }
                     if is_italics_tag(e) {
                         ch.span_style += SpanStyle::italic();
                     }
