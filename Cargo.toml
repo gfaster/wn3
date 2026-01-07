@@ -15,11 +15,11 @@ path = "src/main.rs"
 
 [workspace.dependencies]
 ahash = "0.8.11"
-anyhow = "1.0.86"
-log = "0.4.22"
-ureq = "2.10.0"
+anyhow = "1.0.100"
+log = "0.4.29"
+ureq = "2.12.1"
 url = { version = "2.5.2", features = ["serde"] }
-rusqlite = "0.31.0"
+rusqlite = "0.38.0"
 
 [dependencies]
 fetch = {path = "./fetch"}
@@ -32,16 +32,16 @@ url.workspace = true
 ureq.workspace = true
 rusqlite.workspace = true
 
-scraper = "0.20.0"
-serde = { version = "1.0.204", features = ["derive"] }
-toml = "0.8.15"
+scraper = "0.25.0"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.10"
 regex-lite = "0.1.6"
-markup5ever = "0.12.0"
+markup5ever = "0.36.0"
 clap = { version = "4.5.9", features = ["derive"] }
-ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
+ego-tree = "0.10.0"
 
 [patch.crates-io]
-ego-tree = {git = "https://github.com/gfaster/ego-tree.git"}
+ego-tree = { git = "https://github.com/rust-scraper/ego-tree.git", rev = "40859c1fd15cff1600b331e736239aa2459d3cb1" }
 
 
 [profile.release]

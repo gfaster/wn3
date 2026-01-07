@@ -1,11 +1,6 @@
 use clap::Parser;
 use ego_tree::NodeId;
-use markup5ever::namespace_url;
-use markup5ever::{
-    LocalName, QualName,
-    interface::{NodeOrText, tree_builder::TreeSink},
-    ns,
-};
+use markup5ever::{LocalName, QualName, ns};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use wn3::def::sed::Sed;
@@ -23,7 +18,11 @@ fn set_attr(html: &mut Html, id: NodeId, attr: &str, val: &str) {
     let Node::Element(el) = node.value() else {
         panic!("node id {id:?} is not an element")
     };
-    *el.attrs.get_mut(&qualname).unwrap() = val.into();
+    el.attrs
+        .iter_mut()
+        .find(|(name, _)| name == &qualname)
+        .unwrap()
+        .1 = val.into();
 }
 
 fn args() -> (Html, ValidateRule) {
@@ -533,17 +532,18 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
             .map(|e| e.id())
             .expect("all removable nodes have parents");
         // let before = html.html();
-        html.remove_from_parent(&id);
+        html.tree.get_mut(id).unwrap().detach();
         if validation.is_valid(&html, rule) {
             continue;
         } else {
             // eprintln!("need element {:?}", html.tree.get(id).unwrap().value());
         }
         required.insert(id);
+        // FIXME: I don't know if this works
         match next_sibling {
-            None => html.append(&parent, NodeOrText::AppendNode(id)),
-            Some(s) => html.append_before_sibling(&s, NodeOrText::AppendNode(id)),
-        }
+            None => html.tree.get_mut(parent).unwrap().append_id(id),
+            Some(s) => html.tree.get_mut(s).unwrap().insert_id_before(id),
+        };
         // let after_restore = html.html();
         debug_assert_eq!(
             html.tree.get(id).unwrap().parent().map(|n| n.id()),
@@ -574,19 +574,19 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
         children.clear();
         children.extend(el.children().map(|c| c.id()));
         for &child in &children {
-            html.append_before_sibling(&id, NodeOrText::AppendNode(child))
+            html.tree.get_mut(id).unwrap().insert_id_before(child);
         }
-        html.remove_from_parent(&id);
+        html.tree.get_mut(id).unwrap().detach();
         if validation.is_valid(&html, rule) {
             // eprintln!("don't need element {:?}", html.tree.get(id).unwrap().value());
             continue;
         }
         match next_sibling {
-            None => html.append(&parent, NodeOrText::AppendNode(id)),
-            Some(s) => html.append_before_sibling(&s, NodeOrText::AppendNode(id)),
-        }
+            None => html.tree.get_mut(parent).unwrap().append_id(id),
+            Some(s) => html.tree.get_mut(s).unwrap().insert_id_before(id),
+        };
         for &child in &children {
-            html.append(&id, NodeOrText::AppendNode(child))
+            html.tree.get_mut(id).unwrap().append_id(child);
         }
         required.insert(id);
     }
@@ -615,18 +615,13 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
             let node = &mut html.tree.get_mut(id).unwrap();
             let node = node.value();
             let Node::Element(e) = node else { panic!() };
-            e.attrs
-                .insert(
-                    qualname.clone(),
-                    classes
-                        .iter()
-                        .copied()
-                        .filter(|&c| c != class)
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                        .into(),
-                )
-                .unwrap();
+            e.attrs.iter_mut().find(|n| n.0 == qualname).unwrap().1 = classes
+                .iter()
+                .copied()
+                .filter(|&c| c != class)
+                .collect::<Vec<_>>()
+                .join(" ")
+                .into();
             if validation.is_valid(&html, rule) {
                 classes.remove(class);
             }
@@ -635,11 +630,11 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
         let node = node.value();
         let Node::Element(e) = node else { panic!() };
         if classes.is_empty() {
-            if let Some(c) = e.attrs.get_mut(&qualname) {
-                *c = "".into()
+            if let Some(c) = e.attrs.iter_mut().find(|n| n.0 == qualname) {
+                c.1 = "".into()
             }
         } else {
-            *e.attrs.get_mut(&qualname).unwrap() =
+            e.attrs.iter_mut().find(|n| n.0 == qualname).unwrap().1 =
                 classes.iter().copied().collect::<Vec<_>>().join(" ").into();
         }
     }
@@ -665,7 +660,8 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
             let node = &mut html.tree.get_mut(id).unwrap();
             let node = node.value();
             let Node::Element(e) = node else { panic!() };
-            let prev = e.attrs.remove(&attr.0).unwrap();
+            let i = e.attrs.iter().position(|n| n.0 == attr.0).unwrap();
+            let prev = e.attrs.remove(i);
             if validation.is_valid(&html, rule) {
                 // eprintln!(r#"attr {}="{prev}" is uneeded"#, attr.0.local);
                 continue;
@@ -673,7 +669,7 @@ fn minimize(validation: &ValidateRule, mut html: Html, rule: &Rules) -> Html {
             let node = &mut html.tree.get_mut(id).unwrap();
             let node = node.value();
             let Node::Element(e) = node else { panic!() };
-            e.attrs.insert(attr.0, prev);
+            e.attrs.insert(i, prev);
         }
     }
     eprintln!("attribute stripping complete");

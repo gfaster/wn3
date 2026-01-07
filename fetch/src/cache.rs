@@ -152,13 +152,9 @@ CREATE TABLE IF NOT EXISTS cache_entries (id INTEGER PRIMARY KEY,
             .optional()?;
         let Some((id, ty)) = id else { return Ok(None) };
         let ty = MediaType::new(ty as i32);
-        let blob = self.conn.blob_open(
-            rusqlite::DatabaseName::Main,
-            "cache_entries",
-            "content",
-            id,
-            true,
-        )?;
+        let blob = self
+            .conn
+            .blob_open(rusqlite::MAIN_DB, "cache_entries", "content", id, true)?;
         Ok(Some((ty, blob)))
     }
 
