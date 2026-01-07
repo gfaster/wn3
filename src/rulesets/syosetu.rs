@@ -82,7 +82,11 @@ impl RuleSet for Rule {
                 .next()
                 .is_some_and(|txt| self.scene_sep_reg.is_match(txt))
             {
-                ch.add_scene_sep("◇");
+                ch.add_scene_sep("◇◇◇");
+            } else if el.text().all(|t| t.chars().all(|ch| ch.is_whitespace()))
+                && !el.descendent_elements().any(|e| e.value().name() == "img")
+            {
+                ch.add_line_break().paragraph_finish();
             } else {
                 empty = false;
                 add_basic(ch, el, overrides, &pcfg)

@@ -260,7 +260,7 @@ impl OpfSpec {
         let mut pkg = w.mkel(
             "package",
             [
-                ("version", "3.0"),
+                ("version", "3.0"), // note that this is not changed for 3.X
                 ("xml:lang", self.language.to_str()),
                 ("xmlns", "http://www.idpf.org/2007/opf"),
                 ("unique-identifier", "identifier_0"),

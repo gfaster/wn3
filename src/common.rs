@@ -155,7 +155,7 @@ fn descend<'a>(
                     ch.add_separator();
                 }
                 "br" => {
-                    ch.add_text("\n");
+                    ch.add_line_break();
                 }
                 "ol" | "ul" | "li" => {
                     warn!(target: "parsing", "TODO: handle lists");

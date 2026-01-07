@@ -137,6 +137,7 @@ pub struct ChapterBuilder<'a> {
     pub span_style: SpanStyle,
 
     span_style_actual: SpanStyle,
+    /// no-op currently
     pub preserve_line_feeds: bool,
     pub(crate) resources_unresolved: HashMap<Arc<str>, Image>,
     pub(crate) resources_resolved: HashMap<ImageId, Rc<ResolvedImage>>,
@@ -347,6 +348,12 @@ impl<'a> ChapterBuilder<'a> {
     pub fn add_text(&mut self, content: impl Into<Cow<'a, str>>) -> &mut Self {
         self.span_style_actualize();
         self.current_p.push(content.into().into());
+        self
+    }
+
+    pub fn add_line_break(&mut self) -> &mut Self {
+        self.span_style_actualize();
+        self.current_p.push(InlineElement::LineFeed);
         self
     }
 

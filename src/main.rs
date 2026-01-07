@@ -123,7 +123,9 @@ fn build(args: &Args) -> Result<()> {
     let fetch = FetchContext::new_cfg(conn, client, args.offline).unwrap();
     book.set_title(def.title)
         .add_author(def.author)
-        .add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str());
+        .add_identifier(generate::epub::IdentifierType::Url, def.homepage.as_str())
+        .set_language(def.language);
+
     let compress = match args.compression {
         Compression::Store => generate::epub::Compression::Store,
         Compression::Deflate => generate::epub::Compression::Deflate,

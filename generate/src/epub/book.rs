@@ -19,7 +19,7 @@ use crate::{
     },
     html_writer::EscapeBody,
     image::{Image, ImageId, ResolvedImage},
-    lang::StrLang,
+    lang::{Lang, StrLang},
 };
 
 use super::package::{ContributorRole, IdentifierType, OpfBuilder};
@@ -86,6 +86,11 @@ impl<'a> EpubBuilder<'a> {
     /// default is `false`
     pub fn include_toc(&mut self, include_toc: bool) -> &mut Self {
         self.opf.include_toc = include_toc;
+        self
+    }
+
+    pub fn set_language(&mut self, lang: Lang) -> &mut Self {
+        self.opf.language = lang;
         self
     }
 
@@ -234,9 +239,10 @@ impl<'a> EpubBuilder<'a> {
         self.opf.manifest.push(ManifestItem::new("css/epub.css"));
 
         self.opf.manifest.push(ManifestItem::new("nav.xhtml"));
+        let lang = self.opf.language;
         for (i, chunk) in chunks.iter().enumerate() {
             zip.start_file(format!("EPUB/chunk_{i}.xhtml"), compressed)?;
-            write_chunk(&mut zip, chunk)?;
+            write_chunk(&mut zip, chunk, lang)?;
             self.opf
                 .manifest
                 .push(ManifestItem::new(format!("chunk_{i}.xhtml")));
@@ -256,7 +262,7 @@ impl<'a> EpubBuilder<'a> {
         let spec = self.opf.finish().map_err(|e| error!("{e:?}")).unwrap();
 
         zip.start_file("EPUB/nav.xhtml", compressed)?;
-        write_nav(&mut zip, spec.native_title(), &chunks, &self.sections)?;
+        write_nav(&mut zip, spec.native_title(), &chunks, &self.sections, lang)?;
 
         zip.start_file("EPUB/css/epub.css", compressed)?;
         zip.write_all(include_str!("../../epub.css").as_bytes())?;
@@ -370,6 +376,7 @@ fn write_nav<W: Write>(
     title: &str,
     org: &[&[Chapter]],
     sections: &[(Box<str>, usize)],
+    lang: Lang,
 ) -> io::Result<()> {
     let mut toc = XmlSink::new_xhtml(w)?;
     let mut html = toc.mkel(
@@ -377,8 +384,8 @@ fn write_nav<W: Write>(
         [
             ("xmlns", "http://www.w3.org/1999/xhtml"),
             ("xmlns:epub", "http://www.idpf.org/2007/ops"),
-            ("xml:lang", "en"),
-            ("lang", "en"),
+            ("xml:lang", lang.as_str()),
+            ("lang", lang.as_str()),
         ],
     )?;
     {
@@ -400,7 +407,7 @@ fn write_nav<W: Write>(
     toc.finish()
 }
 
-fn write_chunk(w: impl Write, chunk: &[Chapter]) -> io::Result<()> {
+fn write_chunk(w: impl Write, chunk: &[Chapter], lang: Lang) -> io::Result<()> {
     let mut doc = XmlSink::new_xhtml(w)?;
     {
         let mut html = doc.mkel(
@@ -408,8 +415,8 @@ fn write_chunk(w: impl Write, chunk: &[Chapter]) -> io::Result<()> {
             [
                 ("xmlns", "http://www.w3.org/1999/xhtml"),
                 ("xmlns:epub", "http://www.idpf.org/2007/ops"),
-                ("lang", "en"),
-                ("xml:lang", "en"),
+                ("lang", lang.as_str()),
+                ("xml:lang", lang.as_str()),
                 (
                     "epub:prefix",
                     "z3998: http://www.daisy.org/z3998/2012/vocab/structure/#",
