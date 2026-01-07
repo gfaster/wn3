@@ -13,6 +13,7 @@ use zip::{ZipWriter, write::SimpleFileOptions};
 use crate::{
     chapter::Chapter,
     epub::{
+        self,
         package::{ManifestItem, ManifestProperties},
         xml::XmlSink,
     },
@@ -32,6 +33,8 @@ pub enum Compression {
 pub struct EpubBuilder<'a> {
     opf: OpfBuilder,
     chapters: Vec<Chapter<'a>>,
+    /// `(title, first chapter index)`
+    sections: Vec<(Box<str>, usize)>,
     cover: Option<Rc<ResolvedImage>>,
     additional_resources: HashMap<ImageId, Rc<ResolvedImage>>,
     compression: Compression,
@@ -43,6 +46,7 @@ impl<'a> EpubBuilder<'a> {
         Self {
             opf: OpfBuilder::new(),
             chapters: Vec::new(),
+            sections: Vec::new(),
             chunk_size: 0,
             additional_resources: HashMap::new(),
             cover: None,
@@ -91,6 +95,12 @@ impl<'a> EpubBuilder<'a> {
     /// default is 0
     pub fn set_chunk_size(&mut self, size: usize) -> &mut Self {
         self.chunk_size = size;
+        self
+    }
+
+    pub fn add_section(&mut self, title: impl AsRef<str>) -> &mut Self {
+        self.sections
+            .push((title.as_ref().into(), self.chapters.len()));
         self
     }
 
@@ -246,7 +256,7 @@ impl<'a> EpubBuilder<'a> {
         let spec = self.opf.finish().map_err(|e| error!("{e:?}")).unwrap();
 
         zip.start_file("EPUB/nav.xhtml", compressed)?;
-        write_nav(&mut zip, spec.native_title(), &chunks)?;
+        write_nav(&mut zip, spec.native_title(), &chunks, &self.sections)?;
 
         zip.start_file("EPUB/css/epub.css", compressed)?;
         zip.write_all(include_str!("../../epub.css").as_bytes())?;
@@ -275,7 +285,92 @@ const CONTAINER_XML: &str = r#"<?xml version="1.0"?>
    </rootfiles>
 </container>"#;
 
-fn write_nav(w: impl Write, title: &str, org: &[&[Chapter]]) -> io::Result<()> {
+fn section_ranges(
+    sections: &[(Box<str>, usize)],
+) -> Option<impl Iterator<Item = (Option<&str>, usize)>> {
+    use std::iter;
+
+    let no_section = (None, 0..sections.first()?.1);
+    let main = sections
+        .windows(2)
+        .map(|w| (Some(&*w[0].0), w[0].1..w[1].1));
+    let end = sections
+        .last()
+        .map(|&(ref t, i)| (Some(&**t), i..usize::MAX))?;
+    let ret = iter::once(no_section)
+        .chain(main)
+        .chain(iter::once(end))
+        .filter(|(_, r)| !r.is_empty())
+        .map(|(t, r)| (t, r.len()));
+    Some(ret)
+}
+
+fn chapter_hrefs<'h, 'a>(
+    org: &[&'a [Chapter<'h>]],
+) -> impl Iterator<Item = (String, &'a Chapter<'h>)> {
+    org.into_iter().enumerate().flat_map(|(chunk_idx, &chunk)| {
+        chunk.iter().map(move |chapter| {
+            (
+                format!("chunk_{chunk_idx}.xhtml#{id}", id = chapter.id()),
+                chapter,
+            )
+        })
+    })
+}
+
+fn write_entry<W: Write>(
+    ol: &mut epub::xml::Element<W>,
+    href: &str,
+    ch: &Chapter,
+) -> io::Result<()> {
+    ol.mkel("li", [])?
+        .mkel("a", [("href", href)])?
+        .write_field(EscapeBody(ch.title()))?;
+    writeln!(ol)
+}
+
+fn write_no_sections<W: Write>(
+    nav: &mut epub::xml::Element<W>,
+    org: &[&[Chapter]],
+) -> io::Result<()> {
+    let mut ol = nav.mkel("ol", [])?;
+    for (href, ch) in chapter_hrefs(org) {
+        write_entry(&mut ol, &href, ch)?;
+    }
+    Ok(())
+}
+
+fn write_sections<'a, W: Write>(
+    nav: &mut epub::xml::Element<W>,
+    org: &[&[Chapter]],
+    sections: impl Iterator<Item = (Option<&'a str>, usize)>,
+) -> io::Result<()> {
+    let mut ol = nav.mkel("ol", [])?;
+    let mut chapters = chapter_hrefs(org);
+    for (title, len) in sections {
+        if let Some(title) = title {
+            let mut li = ol.mkel("li", [])?;
+            li.mkel("span", [])?.write_field(EscapeBody(title))?;
+            let mut ol = li.mkel("ol", [])?;
+
+            for (href, ch) in (&mut chapters).take(len) {
+                write_entry(&mut ol, &href, ch)?;
+            }
+        } else {
+            for (href, ch) in (&mut chapters).take(len) {
+                write_entry(&mut ol, &href, ch)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn write_nav<W: Write>(
+    w: W,
+    title: &str,
+    org: &[&[Chapter]],
+    sections: &[(Box<str>, usize)],
+) -> io::Result<()> {
     let mut toc = XmlSink::new_xhtml(w)?;
     let mut html = toc.mkel(
         "html",
@@ -293,22 +388,12 @@ fn write_nav(w: impl Write, title: &str, org: &[&[Chapter]]) -> io::Result<()> {
     }
     let mut body = html.mkel("body", [])?;
     let mut nav = body.mkel("nav", [("epub:type", "toc")])?;
-    nav.mkel("h1", [])?.write_field(title)?;
-    let mut ol = nav.mkel("ol", [])?;
-    for (chunk_idx, &chunk) in org.iter().enumerate() {
-        for chapter in chunk {
-            ol.mkel("li", [])?
-                .mkel(
-                    "a",
-                    [(
-                        "href",
-                        &*format!("chunk_{chunk_idx}.xhtml#{id}", id = chapter.id()),
-                    )],
-                )?
-                .write_field(EscapeBody(chapter.title()))?;
-        }
+    nav.mkel("h2", [])?.write_field(title)?;
+    if let Some(sections) = section_ranges(sections) {
+        write_sections(&mut nav, org, sections)?
+    } else {
+        write_no_sections(&mut nav, org)?
     }
-    drop(ol);
     drop(nav);
     drop(body);
     drop(html);

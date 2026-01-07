@@ -249,7 +249,7 @@ fn fetch_range(
     let mut curr = start;
     loop {
         if let Some(section) = cx.sections.get(&curr) {
-            warn!("TODO: handle section {section}")
+            book.add_section(section);
         }
         ensure!(
             curr.scheme() == "https" || curr.scheme() == "file",
